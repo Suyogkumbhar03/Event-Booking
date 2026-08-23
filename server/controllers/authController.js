@@ -52,8 +52,8 @@ exports.sendOTP = async (req, res) => {
         await OTP.deleteMany({ email: normalizedEmail });
         await OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' });
 
-        // Send HTML OTP Email via Nodemailer
-        await sendOtpEmail(normalizedEmail, otpCode);
+        // Send HTML OTP Email via Nodemailer (non-blocking)
+        sendOtpEmail(normalizedEmail, otpCode).catch(err => console.error('Non-blocking sendOtpEmail error:', err));
 
         res.status(200).json({
             success: true,
@@ -182,7 +182,7 @@ exports.register = async (req, res) => {
         await OTP.deleteMany({ email: normalizedEmail });
         await OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' });
 
-        await sendOtpEmail(normalizedEmail, otpCode);
+        sendOtpEmail(normalizedEmail, otpCode).catch(err => console.error('Non-blocking sendOtpEmail error:', err));
 
         res.status(201).json({
             success: true,
@@ -222,7 +222,7 @@ exports.login = async (req, res) => {
             await OTP.deleteMany({ email: normalizedEmail });
             await OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' });
 
-            await sendOtpEmail(normalizedEmail, otpCode);
+            sendOtpEmail(normalizedEmail, otpCode).catch(err => console.error('Non-blocking sendOtpEmail error:', err));
 
             return res.status(403).json({
                 success: false,
