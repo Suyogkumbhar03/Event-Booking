@@ -11,23 +11,18 @@ const smtpHost = (process.env.EMAIL_HOST || process.env.SMTP_HOST || "smtp.gmail
 const smtpPort = parseInt(process.env.EMAIL_PORT || process.env.SMTP_PORT || "465", 10);
 const isSecure = smtpPort === 465;
 
-// Pure Nodemailer Transporter with 5-second socket timeouts
+// Pure Nodemailer Transporter with Gmail service integration
 const transporter = nodemailer.createTransport(
   cleanUser && cleanPass
     ? {
-        host: smtpHost,
-        port: smtpPort,
-        secure: isSecure, // true for 465, false for other ports
+        service: "gmail",
         auth: {
           user: cleanUser,
           pass: cleanPass
         },
         tls: {
           rejectUnauthorized: false
-        },
-        connectionTimeout: 5000,
-        greetingTimeout: 5000,
-        socketTimeout: 5000
+        }
       }
     : {
         service: "gmail",
@@ -37,10 +32,7 @@ const transporter = nodemailer.createTransport(
         },
         tls: {
           rejectUnauthorized: false
-        },
-        connectionTimeout: 5000,
-        greetingTimeout: 5000,
-        socketTimeout: 5000
+        }
       }
 );
 
