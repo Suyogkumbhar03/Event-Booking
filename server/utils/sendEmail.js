@@ -48,6 +48,38 @@ if (cleanUser && cleanPass) {
   });
 }
 
+// Resend API HTTPS Fallback (Port 443, immune to cloud SMTP blocks)
+const sendViaResend = async (toEmail, subject, htmlContent) => {
+  const apiKey = (process.env.RESEND_API_KEY || "").trim();
+  if (!apiKey) return null;
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        from: "Eventora <onboarding@resend.dev>",
+        to: [toEmail],
+        subject: subject,
+        html: htmlContent
+      })
+    });
+    const data = await response.json();
+    if (response.ok) {
+      console.log(`✅ Live Email sent via Resend API to ${toEmail}:`, data.id);
+      return { success: true, messageId: data.id };
+    } else {
+      console.warn("⚠️ Resend API notice:", data);
+    }
+  } catch (err) {
+    console.warn("⚠️ Resend API call error:", err.message);
+  }
+  return null;
+};
+
 const sendOtpEmail = async (toEmail, otpCode) => {
   const targetEmail = toEmail.toLowerCase().trim();
 
@@ -56,67 +88,73 @@ const sendOtpEmail = async (toEmail, otpCode) => {
   console.log(`[EVENTORA OTP GENERATED] Recipient: ${targetEmail} | OTP: ${otpCode}`);
   console.log("=======================================================\n");
 
-  if (!cleanUser || !cleanPass) {
-    console.log("ℹ️ [Nodemailer] EMAIL_USER / EMAIL_PASS not configured in Render environment variables.");
-    console.log("📌 OTP Code active in MongoDB & logged above. Add EMAIL_USER & EMAIL_PASS on Render to receive real emails.");
-    return { success: true, messageId: `dev-otp-${Date.now()}` };
-  }
-
-  const fromSender = cleanUser ? `"Eventora" <${cleanUser}>` : '"Eventora Access" <no-reply@eventora.com>';
-
-  const mailOptions = {
-    from: fromSender,
-    to: targetEmail,
-    subject: `Your Eventora Verification Code: ${otpCode}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
-        <h2 style="color: #c84b31; text-align: center; margin-bottom: 8px;">Eventora Access</h2>
-        <p style="font-size: 14px; color: #475569; text-align: center;">Enter the verification code below to proceed with your authentication.</p>
-        <div style="text-align: center; margin: 28px 0;">
-          <span style="font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #141413; background: #f9f7f2; border: 1px solid #dcd7ce; padding: 12px 24px; border-radius: 8px; display: inline-block;">
-            ${otpCode}
-          </span>
-        </div>
-        <p style="font-size: 12px; color: #94a3b8; text-align: center;">This code will expire in 5 minutes. If you did not request this code, please ignore this email.</p>
+  const subject = `Your Eventora Verification Code: ${otpCode}`;
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+      <h2 style="color: #c84b31; text-align: center; margin-bottom: 8px;">Eventora Access</h2>
+      <p style="font-size: 14px; color: #475569; text-align: center;">Enter the verification code below to proceed with your authentication.</p>
+      <div style="text-align: center; margin: 28px 0;">
+        <span style="font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #141413; background: #f9f7f2; border: 1px solid #dcd7ce; padding: 12px 24px; border-radius: 8px; display: inline-block;">
+          ${otpCode}
+        </span>
       </div>
-    `,
-  };
+      <p style="font-size: 12px; color: #94a3b8; text-align: center;">This code will expire in 5 minutes. If you did not request this code, please ignore this email.</p>
+    </div>
+  `;
 
-  try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Live Email sent successfully via Nodemailer to ${targetEmail}:`, info.messageId);
-    return { success: true, messageId: info.messageId };
-  } catch (error) {
-    console.warn(`⚠️ Nodemailer Socket/Delivery Warning for ${targetEmail}: ${error.message}`);
-    console.warn(`📌 OTP ${otpCode} is active in MongoDB and printed in terminal above.`);
-    return { success: true, messageId: `dev-otp-${Date.now()}`, warning: error.message };
+  // 1. Try Nodemailer Gmail SMTP if credentials exist
+  if (cleanUser && cleanPass) {
+    try {
+      const fromSender = `"Eventora" <${cleanUser}>`;
+      const info = await transporter.sendMail({
+        from: fromSender,
+        to: targetEmail,
+        subject,
+        html: htmlContent
+      });
+      console.log(`✅ Live Email sent successfully via Nodemailer SMTP to ${targetEmail}:`, info.messageId);
+      return { success: true, messageId: info.messageId };
+    } catch (error) {
+      console.warn(`⚠️ Nodemailer SMTP Warning for ${targetEmail}: ${error.message}`);
+    }
   }
+
+  // 2. Try Resend API Fallback over HTTPS
+  const resendResult = await sendViaResend(targetEmail, subject, htmlContent);
+  if (resendResult) return resendResult;
+
+  console.warn(`📌 OTP ${otpCode} is active in MongoDB & logged in server logs.`);
+  return { success: true, messageId: `dev-otp-${Date.now()}` };
 };
 
 const sendBookingEmail = async (userEmail, userName, eventTitle) => {
   const targetEmail = userEmail.toLowerCase().trim();
-  const fromSender = cleanUser ? `"Eventora" <${cleanUser}>` : '"Eventora Tickets" <no-reply@eventora.com>';
+  const subject = `Booking Confirmed: ${eventTitle}`;
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
+      <h2 style="color: #c84b31;">Hi ${userName}!</h2>
+      <p style="color: #475569;">Your booking for the event <strong>${eventTitle}</strong> is confirmed.</p>
+      <p style="color: #94a3b8; font-size: 13px;">Thank you for choosing Eventora!</p>
+    </div>
+  `;
 
-  const mailOptions = {
-    from: fromSender,
-    to: targetEmail,
-    subject: `Booking Confirmed: ${eventTitle}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
-        <h2 style="color: #c84b31;">Hi ${userName}!</h2>
-        <p style="color: #475569;">Your booking for the event <strong>${eventTitle}</strong> is confirmed.</p>
-        <p style="color: #94a3b8; font-size: 13px;">Thank you for choosing Eventora!</p>
-      </div>
-    `
-  };
-
-  try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Booking confirmation email sent via Nodemailer to ${targetEmail}:`, info.messageId);
-    return { success: true, messageId: info.messageId };
-  } catch (error) {
-    console.warn(`⚠️ Booking email delivery warning for ${targetEmail}:`, error.message);
+  if (cleanUser && cleanPass) {
+    try {
+      const fromSender = `"Eventora" <${cleanUser}>`;
+      const info = await transporter.sendMail({
+        from: fromSender,
+        to: targetEmail,
+        subject,
+        html: htmlContent
+      });
+      console.log(`✅ Booking confirmation email sent via Nodemailer to ${targetEmail}:`, info.messageId);
+      return { success: true, messageId: info.messageId };
+    } catch (error) {
+      console.warn(`⚠️ Booking email delivery warning for ${targetEmail}:`, error.message);
+    }
   }
+
+  return await sendViaResend(targetEmail, subject, htmlContent);
 };
 
 module.exports = {
