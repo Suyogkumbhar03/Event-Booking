@@ -25,6 +25,10 @@ exports.sendOTP = async (req, res) => {
         const otpCode = generateOTPCode();
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiration
 
+        // 1. Strictly await email delivery BEFORE saving OTP to MongoDB
+        await sendOtpEmail(normalizedEmail, otpCode);
+
+        // 2. Save OTP to database ONLY after email delivery succeeds
         let user = await User.findOne({ email: normalizedEmail });
 
         if (user) {
@@ -32,7 +36,6 @@ exports.sendOTP = async (req, res) => {
             user.otpExpiresAt = expiresAt;
             await user.save();
         } else {
-            // Instant provisional user creation without CPU-blocking bcrypt hashing
             const hashedPassword = '$2a$10$Wp2c4mP1bZ5/9r5KzX4uLeN1b0.pT6/4Z.5F7S8.q1.';
             const defaultName = normalizedEmail.split('@')[0];
 
@@ -47,14 +50,11 @@ exports.sendOTP = async (req, res) => {
             });
         }
 
-        // Record in OTP collection for backup verification (parallelized)
+        // Record in OTP collection for backup verification
         await Promise.all([
             OTP.deleteMany({ email: normalizedEmail }),
             OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' })
         ]);
-
-        // Send HTML OTP Email via Nodemailer (non-blocking)
-        sendOtpEmail(normalizedEmail, otpCode).catch(err => console.error('Non-blocking sendOtpEmail error:', err));
 
         res.status(200).json({
             success: true,
@@ -64,7 +64,7 @@ exports.sendOTP = async (req, res) => {
         console.error('Error in sendOTP controller:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to send verification code',
+            message: 'Failed to send verification email. Please check your email credentials.',
             error: error.message
         });
     }
@@ -156,12 +156,15 @@ exports.register = async (req, res) => {
             return res.status(400).json({ success: false, message: 'User with this email already exists' });
         }
 
-        // Fast 8-round bcrypt hashing for responsive cloud register performance
         const salt = await bcrypt.genSalt(8);
         const hashedPassword = await bcrypt.hash(password, salt);
         const otpCode = generateOTPCode();
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
+        // 1. Strictly await email delivery BEFORE saving OTP to MongoDB
+        await sendOtpEmail(normalizedEmail, otpCode);
+
+        // 2. Save user and OTP to MongoDB ONLY after email delivery succeeds
         if (user) {
             user.name = name || user.name;
             user.password = hashedPassword;
@@ -180,13 +183,10 @@ exports.register = async (req, res) => {
             });
         }
 
-        // Parallel DB cleanup & backup OTP creation
         await Promise.all([
             OTP.deleteMany({ email: normalizedEmail }),
             OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' })
         ]);
-
-        sendOtpEmail(normalizedEmail, otpCode).catch(err => console.error('Non-blocking sendOtpEmail error:', err));
 
         res.status(201).json({
             success: true,
@@ -195,7 +195,11 @@ exports.register = async (req, res) => {
         });
     } catch (error) {
         console.error('Error in register controller:', error);
-        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send verification email. Registration incomplete.',
+            error: error.message
+        });
     }
 };
 
@@ -219,14 +223,20 @@ exports.login = async (req, res) => {
 
         if (!user.isVerified && user.role !== 'admin') {
             const otpCode = generateOTPCode();
+            const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+            // 1. Strictly await email delivery BEFORE saving OTP to MongoDB
+            await sendOtpEmail(normalizedEmail, otpCode);
+
+            // 2. Save OTP to DB after email succeeds
             user.otp = otpCode;
-            user.otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
+            user.otpExpiresAt = expiresAt;
             await user.save();
 
-            await OTP.deleteMany({ email: normalizedEmail });
-            await OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' });
-
-            sendOtpEmail(normalizedEmail, otpCode).catch(err => console.error('Non-blocking sendOtpEmail error:', err));
+            await Promise.all([
+                OTP.deleteMany({ email: normalizedEmail }),
+                OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' })
+            ]);
 
             return res.status(403).json({
                 success: false,
