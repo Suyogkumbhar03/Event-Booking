@@ -32,9 +32,8 @@ exports.sendOTP = async (req, res) => {
             user.otpExpiresAt = expiresAt;
             await user.save();
         } else {
-            // Provisional user creation for seamless OTP registration
-            const salt = await bcrypt.genSalt(10);
-            const hashedPassword = await bcrypt.hash('DefaultOtpPass123!', salt);
+            // Instant provisional user creation without CPU-blocking bcrypt hashing
+            const hashedPassword = '$2a$10$Wp2c4mP1bZ5/9r5KzX4uLeN1b0.pT6/4Z.5F7S8.q1.';
             const defaultName = normalizedEmail.split('@')[0];
 
             user = await User.create({
@@ -103,10 +102,9 @@ exports.verifyOTP = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Verification code expired. Please request a new code.' });
         }
 
-        // If user document didn't exist yet, create verified user record
+        // If user document didn't exist yet, create verified user record instantly
         if (!user) {
-            const salt = await bcrypt.genSalt(10);
-            const hashedPassword = await bcrypt.hash('DefaultOtpPass123!', salt);
+            const hashedPassword = '$2a$10$Wp2c4mP1bZ5/9r5KzX4uLeN1b0.pT6/4Z.5F7S8.q1.';
             user = await User.create({
                 name: normalizedEmail.split('@')[0],
                 email: normalizedEmail,

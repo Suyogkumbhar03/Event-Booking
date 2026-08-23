@@ -97,15 +97,14 @@ const Login = () => {
                 }
             }
 
-            setTimeout(() => {
-                if (data.role === 'admin') {
-                    navigate('/admin');
-                } else if (newlyCreatedBooking) {
-                    navigate('/dashboard', { state: { showTicketModal: true, newlyCreatedBooking } });
-                } else {
-                    navigate('/dashboard');
-                }
-            }, 600);
+            // Immediate redirection without artificial setTimeout delay
+            if (data.role === 'admin') {
+                navigate('/admin');
+            } else if (newlyCreatedBooking) {
+                navigate('/dashboard', { state: { showTicketModal: true, newlyCreatedBooking } });
+            } else {
+                navigate('/dashboard');
+            }
         } catch (err) {
             setError(typeof err === 'string' ? err : err.message || 'Verification failed');
         } finally {

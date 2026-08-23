@@ -57,9 +57,7 @@ const AuthModal = ({ isOpen, onClose, onSuccess, bookingContext }) => {
     try {
       const data = await verifyOTP(email, otp);
       setSuccessMsg('Account verified! Proceeding with ticket reservation...');
-      setTimeout(() => {
-        onSuccess(data.token, data.user || data);
-      }, 500);
+      onSuccess(data.token, data.user || data);
     } catch (err) {
       setError(typeof err === 'string' ? err : err.message || 'OTP verification failed');
     } finally {
