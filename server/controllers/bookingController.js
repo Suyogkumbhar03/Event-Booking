@@ -310,14 +310,19 @@ exports.sendBookingOTP = async (req, res) => {
         if (!userEmail) return res.status(400).json({ message: 'Email required for OTP' });
 
         const normalizedEmail = userEmail.toLowerCase().trim();
-        await sendOtpEmail(normalizedEmail, otp);
         await Promise.all([
             OTP.deleteMany({ email: normalizedEmail }),
             OTP.create({ email: normalizedEmail, otp, action: 'event_booking' })
         ]);
-        res.json({ message: 'OTP sent successfully' });
+        console.log(`✅ Saved OTP ${otp} in database for booking ${normalizedEmail}`);
+
+        sendOtpEmail(normalizedEmail, otp)
+            .then(() => console.log(`📧 Booking OTP delivered to ${normalizedEmail}`))
+            .catch((err) => console.error('❌ Booking OTP email error:', err.message));
+
+        res.json({ success: true, message: 'OTP sent successfully' });
     } catch (error) {
-        res.status(500).json({ message: 'Error sending OTP', error: error.message });
+        res.status(500).json({ success: false, message: 'Error sending OTP', error: error.message });
     }
 };
 

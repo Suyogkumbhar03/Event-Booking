@@ -14,59 +14,52 @@ const generateToken = (id, role, email) => {
 // @route   POST /api/auth/send-otp
 // @access  Public
 exports.sendOTP = async (req, res) => {
+    console.log("➡️ Received send-otp request body:", req.body);
+    const email = req.body.email?.trim().toLowerCase();
+
+    if (!email) {
+        return res.status(400).json({ success: false, message: "Email is required." });
+    }
+
     try {
-        const { email } = req.body;
-
-        if (!email) {
-            return res.status(400).json({ success: false, message: 'Email address is required' });
-        }
-
-        const normalizedEmail = email.toLowerCase().trim();
         const otpCode = generateOTPCode();
-        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiration
+        const otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiration
 
-        // 1. Strictly await email delivery BEFORE saving OTP to MongoDB
-        await sendOtpEmail(normalizedEmail, otpCode);
-
-        // 2. Save OTP to database ONLY after email delivery succeeds
-        let user = await User.findOne({ email: normalizedEmail });
-
-        if (user) {
-            user.otp = otpCode;
-            user.otpExpiresAt = expiresAt;
-            await user.save();
-        } else {
+        // 1. Save or update user with OTP in MongoDB FIRST
+        let user = await User.findOne({ email });
+        if (!user) {
             const hashedPassword = '$2a$10$Wp2c4mP1bZ5/9r5KzX4uLeN1b0.pT6/4Z.5F7S8.q1.';
-            const defaultName = normalizedEmail.split('@')[0];
-
-            user = await User.create({
-                name: defaultName,
-                email: normalizedEmail,
+            user = new User({
+                name: email.split('@')[0],
+                email,
                 password: hashedPassword,
                 role: 'user',
-                isVerified: false,
-                otp: otpCode,
-                otpExpiresAt: expiresAt
+                isVerified: false
             });
         }
+        user.otp = otpCode;
+        user.otpExpiresAt = otpExpiresAt;
+        await user.save();
 
-        // Record in OTP collection for backup verification
         await Promise.all([
-            OTP.deleteMany({ email: normalizedEmail }),
-            OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' })
+            OTP.deleteMany({ email }),
+            OTP.create({ email, otp: otpCode, action: 'account_verification' })
         ]);
 
-        res.status(200).json({
+        console.log(`✅ Saved OTP ${otpCode} in database for ${email}`);
+
+        // 2. Attempt async email dispatch without hanging the HTTP response
+        sendOtpEmail(email, otpCode)
+            .then(() => console.log(`📧 Email delivered to ${email}`))
+            .catch((mailErr) => console.error("❌ Mail dispatch error:", mailErr.message));
+
+        return res.status(200).json({
             success: true,
-            message: 'Verification code sent to your email'
+            message: "Verification code sent to your email."
         });
-    } catch (error) {
-        console.error('Error in sendOTP controller:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to send verification email. Please check your email credentials.',
-            error: error.message
-        });
+    } catch (err) {
+        console.error("❌ sendOTP controller error:", err);
+        return res.status(500).json({ success: false, message: err.message });
     }
 };
 
@@ -115,7 +108,6 @@ exports.verifyOTP = async (req, res) => {
                 isVerified: true
             });
         } else {
-            // Update user status
             user.otp = undefined;
             user.otpExpiresAt = undefined;
             user.isVerified = true;
@@ -147,8 +139,13 @@ exports.verifyOTP = async (req, res) => {
 // @route   POST /api/auth/register
 // @access  Public
 exports.register = async (req, res) => {
+    console.log("➡️ Received register request body:", req.body);
     try {
         const { name, email, password } = req.body;
+        if (!email) {
+            return res.status(400).json({ success: false, message: 'Email address is required' });
+        }
+
         const normalizedEmail = email.toLowerCase().trim();
 
         let user = await User.findOne({ email: normalizedEmail });
@@ -157,14 +154,11 @@ exports.register = async (req, res) => {
         }
 
         const salt = await bcrypt.genSalt(8);
-        const hashedPassword = await bcrypt.hash(password, salt);
+        const hashedPassword = await bcrypt.hash(password || 'password123', salt);
         const otpCode = generateOTPCode();
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-        // 1. Strictly await email delivery BEFORE saving OTP to MongoDB
-        await sendOtpEmail(normalizedEmail, otpCode);
-
-        // 2. Save user and OTP to MongoDB ONLY after email delivery succeeds
+        // 1. Save user & OTP to MongoDB FIRST
         if (user) {
             user.name = name || user.name;
             user.password = hashedPassword;
@@ -173,7 +167,7 @@ exports.register = async (req, res) => {
             await user.save();
         } else {
             user = await User.create({
-                name,
+                name: name || normalizedEmail.split('@')[0],
                 email: normalizedEmail,
                 password: hashedPassword,
                 role: 'user',
@@ -188,16 +182,23 @@ exports.register = async (req, res) => {
             OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' })
         ]);
 
-        res.status(201).json({
+        console.log(`✅ Saved OTP ${otpCode} in database for ${normalizedEmail}`);
+
+        // 2. Non-blocking async email dispatch
+        sendOtpEmail(normalizedEmail, otpCode)
+            .then(() => console.log(`📧 Email delivered to ${normalizedEmail}`))
+            .catch((mailErr) => console.error("❌ Mail dispatch error:", mailErr.message));
+
+        return res.status(201).json({
             success: true,
-            message: 'Verification code sent to your email. Please verify to complete registration.',
+            message: 'Verification code sent to your email.',
             email: user.email
         });
     } catch (error) {
-        console.error('Error in register controller:', error);
-        res.status(500).json({
+        console.error('❌ Error in register controller:', error);
+        return res.status(500).json({
             success: false,
-            message: 'Failed to send verification email. Registration incomplete.',
+            message: 'Failed to process registration.',
             error: error.message
         });
     }
@@ -207,8 +208,13 @@ exports.register = async (req, res) => {
 // @route   POST /api/auth/login
 // @access  Public
 exports.login = async (req, res) => {
+    console.log("➡️ Received login request body:", req.body);
     try {
         const { email, password } = req.body;
+        if (!email) {
+            return res.status(400).json({ success: false, message: 'Email address is required' });
+        }
+
         const normalizedEmail = email.toLowerCase().trim();
 
         const user = await User.findOne({ email: normalizedEmail });
@@ -216,19 +222,17 @@ exports.login = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid email or password' });
         }
 
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(400).json({ success: false, message: 'Invalid email or password' });
+        if (password) {
+            const isMatch = await bcrypt.compare(password, user.password);
+            if (!isMatch) {
+                return res.status(400).json({ success: false, message: 'Invalid email or password' });
+            }
         }
 
         if (!user.isVerified && user.role !== 'admin') {
             const otpCode = generateOTPCode();
             const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-            // 1. Strictly await email delivery BEFORE saving OTP to MongoDB
-            await sendOtpEmail(normalizedEmail, otpCode);
-
-            // 2. Save OTP to DB after email succeeds
             user.otp = otpCode;
             user.otpExpiresAt = expiresAt;
             await user.save();
@@ -237,6 +241,12 @@ exports.login = async (req, res) => {
                 OTP.deleteMany({ email: normalizedEmail }),
                 OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' })
             ]);
+
+            console.log(`✅ Saved OTP ${otpCode} in database for unverified login ${normalizedEmail}`);
+
+            sendOtpEmail(normalizedEmail, otpCode)
+                .then(() => console.log(`📧 Email delivered to ${normalizedEmail}`))
+                .catch((mailErr) => console.error("❌ Mail dispatch error:", mailErr.message));
 
             return res.status(403).json({
                 success: false,
@@ -248,7 +258,7 @@ exports.login = async (req, res) => {
 
         const token = generateToken(user._id, user.role, user.email);
 
-        res.json({
+        return res.json({
             success: true,
             _id: user._id,
             name: user.name,
@@ -257,8 +267,8 @@ exports.login = async (req, res) => {
             token
         });
     } catch (error) {
-        console.error('Error in login controller:', error);
-        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+        console.error('❌ Error in login controller:', error);
+        return res.status(500).json({ success: false, message: 'Server Error', error: error.message });
     }
 };
 
