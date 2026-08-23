@@ -47,9 +47,11 @@ exports.sendOTP = async (req, res) => {
             });
         }
 
-        // Record in OTP collection for backup verification
-        await OTP.deleteMany({ email: normalizedEmail });
-        await OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' });
+        // Record in OTP collection for backup verification (parallelized)
+        await Promise.all([
+            OTP.deleteMany({ email: normalizedEmail }),
+            OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' })
+        ]);
 
         // Send HTML OTP Email via Nodemailer (non-blocking)
         sendOtpEmail(normalizedEmail, otpCode).catch(err => console.error('Non-blocking sendOtpEmail error:', err));
@@ -154,7 +156,8 @@ exports.register = async (req, res) => {
             return res.status(400).json({ success: false, message: 'User with this email already exists' });
         }
 
-        const salt = await bcrypt.genSalt(10);
+        // Fast 8-round bcrypt hashing for responsive cloud register performance
+        const salt = await bcrypt.genSalt(8);
         const hashedPassword = await bcrypt.hash(password, salt);
         const otpCode = generateOTPCode();
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
@@ -177,8 +180,11 @@ exports.register = async (req, res) => {
             });
         }
 
-        await OTP.deleteMany({ email: normalizedEmail });
-        await OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' });
+        // Parallel DB cleanup & backup OTP creation
+        await Promise.all([
+            OTP.deleteMany({ email: normalizedEmail }),
+            OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' })
+        ]);
 
         sendOtpEmail(normalizedEmail, otpCode).catch(err => console.error('Non-blocking sendOtpEmail error:', err));
 
