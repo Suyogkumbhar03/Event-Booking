@@ -1,8 +1,13 @@
 import axios from 'axios';
 
 const getBaseURL = () => {
-    if (import.meta.env.VITE_API_BASE_URL) {
-        return import.meta.env.VITE_API_BASE_URL;
+    let url = import.meta.env.VITE_API_BASE_URL;
+    if (url) {
+        url = url.trim().replace(/\/+$/, '');
+        if (!url.endsWith('/api')) {
+            url = `${url}/api`;
+        }
+        return url;
     }
     if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
         return 'https://event-booking-pjit.onrender.com/api';

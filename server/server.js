@@ -48,11 +48,18 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// API Routes
+// API Routes (supports both /api/* and /* endpoints for maximum resilience)
 app.use('/api/auth', authRoutes);
+app.use('/auth', authRoutes);
+
 app.use('/api/events', eventRoutes);
+app.use('/events', eventRoutes);
+
 app.use('/api/bookings', bookingRoutes);
+app.use('/bookings', bookingRoutes);
+
 app.use('/api/admin', adminRoutes);
+app.use('/admin', adminRoutes);
 
 // Global 404 Route Handler
 app.use((req, res, next) => {
