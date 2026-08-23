@@ -1,16 +1,20 @@
 import axios from 'axios';
 
-const BASE_URL =
-    import.meta.env.VITE_API_BASE_URL
-        ? import.meta.env.VITE_API_BASE_URL.trim().replace(/\/+$/, '')
-        : typeof window !== 'undefined' &&
-          window.location.hostname !== 'localhost' &&
-          window.location.hostname !== '127.0.0.1'
-        ? 'https://event-booking-pjit.onrender.com'
-        : 'http://localhost:5000';
+const getBaseURL = () => {
+    let base = import.meta.env.VITE_API_BASE_URL;
+    if (base) {
+        base = base.trim().replace(/\/+$/, '').replace(/\/api$/, '');
+        return `${base}/api`;
+    }
+    const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+        return 'https://event-booking-pjit.onrender.com/api';
+    }
+    return 'http://localhost:5000/api';
+};
 
 const api = axios.create({
-    baseURL: `${BASE_URL}/api`,
+    baseURL: getBaseURL(),
 });
 
 api.interceptors.request.use((config) => {

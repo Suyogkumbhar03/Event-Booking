@@ -28,11 +28,11 @@ exports.sendOTP = async (req, res) => {
         // 1. Save or update user with OTP in MongoDB FIRST
         let user = await User.findOne({ email });
         if (!user) {
-            const hashedPassword = '$2a$10$Wp2c4mP1bZ5/9r5KzX4uLeN1b0.pT6/4Z.5F7S8.q1.';
+            // User model requires name and password — provide defaults for OTP-only flow
             user = new User({
                 name: email.split('@')[0],
                 email,
-                password: hashedPassword,
+                password: '$2a$08$KP7yOkhgCrUKsIOH8.HdbuL8Iqhs81qTG/W3Sf31Ci3QY9Rk/tTZO',
                 role: 'user',
                 isVerified: false
             });
