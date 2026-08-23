@@ -1,35 +1,29 @@
 import axios from 'axios';
 
-const getBaseURL = () => {
-    let url = import.meta.env.VITE_API_BASE_URL;
-    if (url) {
-        url = url.trim().replace(/\/+$/, '');
-        if (!url.endsWith('/api')) {
-            url = `${url}/api`;
-        }
-        return url;
-    }
-    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-        return 'https://event-booking-pjit.onrender.com/api';
-    }
-    return 'http://localhost:5000/api';
-};
-
-const API_BASE_URL = getBaseURL();
+const BASE_URL =
+    import.meta.env.VITE_API_BASE_URL
+        ? import.meta.env.VITE_API_BASE_URL.trim().replace(/\/+$/, '')
+        : typeof window !== 'undefined' &&
+          window.location.hostname !== 'localhost' &&
+          window.location.hostname !== '127.0.0.1'
+        ? 'https://event-booking-pjit.onrender.com'
+        : 'http://localhost:5000';
 
 const api = axios.create({
-    baseURL: API_BASE_URL,
+    baseURL: `${BASE_URL}/api`,
 });
 
 api.interceptors.request.use((config) => {
+    // Strip a leading /api segment if present to avoid /api/api/ duplication,
+    // since baseURL already includes /api
     if (config.url) {
-        if (!config.url.startsWith('/')) {
-            config.url = `/${config.url}`;
-        }
-        // Prevent double /api/api/ by stripping /api prefix if config.url contains it (since baseURL ends with /api)
-        if (config.url.startsWith('/api/')) {
-            config.url = config.url.substring(4); // Strips '/api', leaving '/auth/...'
-        }
+        // Strip duplicate /api prefix first, then remove leading slash.
+        // Axios treats a leading '/' as origin-relative (drops baseURL path),
+        // causing /api/ to be lost. Making paths relative fixes this.
+        config.url = config.url
+            .replace(/^\/api\//, '/')   // /api/auth/... → /auth/...
+            .replace(/^\/api$/, '/')    // /api → /
+            .replace(/^\//, '');        // /auth/... → auth/... (relative to baseURL)
     }
     const token = localStorage.getItem('token');
     if (token) {
@@ -43,9 +37,13 @@ api.interceptors.response.use(
     (error) => {
         if (error.response && error.response.status === 401) {
             const msg = error.response.data?.message || '';
-            if (msg.includes('user account not found') || msg.includes('user not found') || msg.includes('invalid or expired')) {
+            if (
+                msg.includes('user account not found') ||
+                msg.includes('user not found') ||
+                msg.includes('invalid or expired')
+            ) {
                 localStorage.removeItem('token');
-                localStorage.removeItem('user');
+                localStorage.removeItem('userInfo');
             }
         }
         return Promise.reject(error);

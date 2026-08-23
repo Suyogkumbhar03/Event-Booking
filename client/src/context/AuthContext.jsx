@@ -22,7 +22,7 @@ export const AuthProvider = ({ children }) => {
 
     const sendOTP = async (email) => {
         try {
-            const { data } = await api.post('/auth/send-otp', { email });
+            const { data } = await api.post('auth/send-otp', { email });
             return data;
         } catch (error) {
             throw error.response?.data?.message || error.message || 'Failed to send OTP';
@@ -31,7 +31,7 @@ export const AuthProvider = ({ children }) => {
 
     const verifyOTP = async (email, otp) => {
         try {
-            const { data } = await api.post('/auth/verify-otp', { email, otp });
+            const { data } = await api.post('auth/verify-otp', { email, otp });
             if (data.token) {
                 const userData = data.user || {
                     _id: data._id,
@@ -52,7 +52,7 @@ export const AuthProvider = ({ children }) => {
 
     const login = async (email, password) => {
         try {
-            const { data } = await api.post('/auth/login', { email, password });
+            const { data } = await api.post('auth/login', { email, password });
             if (data.token) {
                 setUser(data);
                 localStorage.setItem('userInfo', JSON.stringify(data));
@@ -67,7 +67,7 @@ export const AuthProvider = ({ children }) => {
 
     const register = async (name, email, password) => {
         try {
-            const { data } = await api.post('/auth/register', { name, email, password });
+            const { data } = await api.post('auth/register', { name, email, password });
             return data;
         } catch (error) {
             throw error.response?.data?.message || 'Registration failed';
