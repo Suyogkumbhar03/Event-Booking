@@ -6,17 +6,32 @@ const protect = async (req, res, next) => {
     if (token && token.startsWith('Bearer')) {
         try {
             token = token.split(' ')[1];
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            req.user = await User.findById(decoded.id).select('-password');
-            if (!req.user) {
-                return res.status(401).json({ message: 'Not authorized, user not found' });
+            const secret = process.env.JWT_SECRET || 'eventora_jwt_secure_key_2026';
+            const decoded = jwt.verify(token, secret);
+            
+            // 1. Try finding by ID
+            let userDoc = null;
+            if (decoded.id) {
+                userDoc = await User.findById(decoded.id).select('-password');
             }
+
+            // 2. Fallback: search by email if ID lookup fails or DB re-seeded
+            if (!userDoc && decoded.email) {
+                userDoc = await User.findOne({ email: decoded.email.toLowerCase().trim() }).select('-password');
+            }
+
+            if (!userDoc) {
+                return res.status(401).json({ message: 'Not authorized, user account not found. Please log in again.' });
+            }
+
+            req.user = userDoc;
             next();
         } catch (error) {
-            res.status(401).json({ message: 'Not authorized, token failed' });
+            console.error('JWT Verification Error:', error.message);
+            res.status(401).json({ message: 'Not authorized, token invalid or expired' });
         }
     } else {
-        res.status(401).json({ message: 'Not authorized, no token' });
+        res.status(401).json({ message: 'Not authorized, no token provided' });
     }
 };
 

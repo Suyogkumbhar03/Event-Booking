@@ -2,166 +2,422 @@ import React, { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../utils/axios';
 import { AuthContext } from '../context/AuthContext';
-import { FaCalendarAlt, FaMapMarkerAlt, FaChair, FaMoneyBillWave } from 'react-icons/fa';
+import { SAMPLE_EVENTS } from '../constants/sampleEvents';
+import { FaCalendarAlt, FaMapMarkerAlt, FaClock, FaStamp, FaUser, FaTimes, FaCheckCircle } from 'react-icons/fa';
+import TicketReceipt from '../components/ui/TicketReceipt';
+import AuthModal from '../components/auth/AuthModal';
 
 const EventDetail = () => {
-    const { id } = useParams();
-    const navigate = useNavigate();
-    const { user } = useContext(AuthContext);
-    const [event, setEvent] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [bookingLoading, setBookingLoading] = useState(false);
-    const [otp, setOtp] = useState('');
-    const [showOTP, setShowOTP] = useState(false);
-    const [error, setError] = useState('');
-    const [successMsg, setSuccessMsg] = useState('');
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user, token } = useContext(AuthContext);
 
-    useEffect(() => {
-        const fetchEvent = async () => {
-            try {
-                const { data } = await api.get(`/events/${id}`);
-                setEvent(data);
-            } catch (err) {
-                setError('Failed to load event details.');
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchEvent();
-    }, [id]);
+  const [event, setEvent] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [bookingLoading, setBookingLoading] = useState(false);
 
-    const handleBooking = async () => {
-        if (!user) {
-            navigate('/login');
-            return;
+  // Tier & Quantity State
+  const [selectedTier, setSelectedTier] = useState(null);
+  const [ticketQuantity, setTicketQuantity] = useState(1);
+
+  // Auth & Booking Modal Controls
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [pendingBooking, setPendingBooking] = useState(null);
+
+  // Confirmed Digital Ticket Pass Modal
+  const [confirmedTicket, setConfirmedTicket] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetchEvent();
+  }, [id]);
+
+  const fetchEvent = async () => {
+    try {
+      setLoading(true);
+      const { data } = await api.get(`/events/${id}`);
+      setEvent(data);
+      if (data.ticketTiers && data.ticketTiers.length > 0) {
+        setSelectedTier(data.ticketTiers[0]);
+      }
+    } catch (err) {
+      console.warn('API fetch failed, matching against sample events dataset');
+      const sample = SAMPLE_EVENTS.find(e => e._id === id || e.title.toLowerCase().includes(id.toLowerCase()));
+      if (sample) {
+        setEvent(sample);
+        if (sample.ticketTiers && sample.ticketTiers.length > 0) {
+          setSelectedTier(sample.ticketTiers[0]);
         }
-        setBookingLoading(true);
-        setError('');
-        setSuccessMsg('');
+      } else {
+        setEvent(SAMPLE_EVENTS[0]);
+        setSelectedTier(SAMPLE_EVENTS[0].ticketTiers[0]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        try {
-            if (!showOTP) {
-                await api.post('/bookings/send-otp');
-                setShowOTP(true);
-                setSuccessMsg('OTP sent to your email. Please verify to confirm booking.');
-            } else {
-                await api.post('/bookings', { eventId: event._id, otp });
-                setSuccessMsg('Booking requested! Awaiting admin confirmation.');
-                setShowOTP(false);
-                // Update local seats count dynamically after booking
-                setEvent({ ...event, availableSeats: event.availableSeats - 1 });
-            }
-        } catch (err) {
-            setError(err.response?.data?.message || 'Booking failed');
-        } finally {
-            setBookingLoading(false);
-        }
+  // Step 1 & 2: User clicks "Book Ticket / Confirm & Pay"
+  const handleBookingTrigger = async () => {
+    setError('');
+    
+    const targetEventId = event._id || event.customId || event.slug;
+    const currentTierName = selectedTier ? selectedTier.name : 'Standard Entry';
+    const unitPrice = selectedTier ? selectedTier.price : (event.ticketPrice || 0);
+    const subtotal = unitPrice * ticketQuantity;
+    const serviceFee = subtotal > 0 ? 5 : 0;
+    const totalPrice = subtotal + serviceFee;
+
+    const bookingPayload = {
+      eventId: targetEventId,
+      tier: currentTierName,
+      quantity: ticketQuantity,
+      totalPrice: totalPrice,
+      title: event.title
     };
 
-    if (loading) return <div className="text-center py-20 text-xl font-semibold">Loading...</div>;
-    if (error && !event) return <div className="text-center py-20 text-xl text-red-500">{error || 'Event not found'}</div>;
+    // Mandatory OTP verification required for every booking confirmation
+    setPendingBooking(bookingPayload);
+    setShowAuthModal(true);
+  };
 
-    const isSoldOut = event.availableSeats <= 0;
+  // Step 4: Execute booking request ONLY AFTER OTP verification / Token existence
+  const executeBookingApi = async (payload, authToken) => {
+    setBookingLoading(true);
+    setError('');
 
+    try {
+      const headers = { Authorization: `Bearer ${authToken}` };
+      const { data } = await api.post('/bookings', {
+        eventId: payload.eventId,
+        tier: payload.tier,
+        quantity: payload.quantity,
+        totalPrice: payload.totalPrice
+      }, { headers });
+
+      const createdBooking = data.booking || data;
+      setConfirmedTicket(createdBooking);
+      setShowAuthModal(false);
+      setPendingBooking(null);
+    } catch (err) {
+      console.error('Booking execution error:', err);
+      setError(err.response?.data?.message || err.message || 'Failed to complete booking execution');
+    } finally {
+      setBookingLoading(false);
+    }
+  };
+
+  // Callback triggered when AuthModal completes 6-digit OTP verification
+  const handleAuthModalSuccess = async (verifiedToken) => {
+    setShowAuthModal(false);
+    if (pendingBooking) {
+      await executeBookingApi(pendingBooking, verifiedToken);
+    }
+  };
+
+  if (loading) {
     return (
-        <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden mt-8">
-            {event.image ? (
-                <img src={event.image} alt={event.title} className="w-full h-80 object-cover" />
-            ) : (
-                <div className="w-full h-64 bg-gray-900 flex items-center justify-center text-white/50 text-6xl font-black uppercase tracking-widest">
-                    {event.category}
-                </div>
-            )}
-
-            <div className="p-8 md:p-12">
-                <div className="flex flex-col md:flex-row justify-between items-start mb-8 gap-6">
-                    <div>
-                        <div className="inline-block bg-gray-200 text-gray-800 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide mb-3">
-                            {event.category}
-                        </div>
-                        <h1 className="text-4xl font-extrabold text-gray-900 mb-4">{event.title}</h1>
-                        <p className="text-gray-600 text-lg leading-relaxed mb-6">{event.description}</p>
-                    </div>
-
-                    <div className="bg-gray-50 p-6 rounded-xl border border-gray-100 min-w-[300px] w-full md:w-auto shrink-0 shadow-sm">
-                        <h3 className="text-xl font-bold text-gray-800 mb-6">Booking Details</h3>
-
-                        <div className="space-y-4 mb-8">
-                            <div className="flex items-center gap-4 text-gray-600">
-                                <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-900 shrink-0">
-                                    <FaMoneyBillWave />
-                                </div>
-                                <div>
-                                    <p className="text-sm font-semibold text-gray-400 uppercase">Ticket Price</p>
-                                    <p className="font-bold text-gray-800 text-lg">{event.ticketPrice === 0 ? <span className="text-green-500">Free</span> : `₹${event.ticketPrice}`}</p>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-4 text-gray-600">
-                                <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-900 shrink-0">
-                                    <FaChair />
-                                </div>
-                                <div>
-                                    <p className="text-sm font-semibold text-gray-400 uppercase">Availability</p>
-                                    <p className="font-bold text-gray-800">
-                                        <span className={event.availableSeats < 10 ? 'text-orange-500' : ''}>{event.availableSeats}</span> / {event.totalSeats}
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-4 text-gray-600">
-                                <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-900 shrink-0">
-                                    <FaCalendarAlt />
-                                </div>
-                                <div>
-                                    <p className="text-sm font-semibold text-gray-400 uppercase">Date</p>
-                                    <p className="font-bold text-gray-800">{new Date(event.date).toLocaleDateString()}</p>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-4 text-gray-600">
-                                <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-900 shrink-0">
-                                    <FaMapMarkerAlt />
-                                </div>
-                                <div>
-                                    <p className="text-sm font-semibold text-gray-400 uppercase">Location</p>
-                                    <p className="font-bold text-gray-800">{event.location}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {showOTP && (
-                            <div className="mb-4">
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Enter OTP to Confirm</label>
-                                <input
-                                    type="text"
-                                    required
-                                    placeholder="6-digit code"
-                                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-gray-700 transition shadow-sm font-bold tracking-widest text-center text-lg"
-                                    value={otp}
-                                    onChange={(e) => setOtp(e.target.value)}
-                                    maxLength="6"
-                                />
-                            </div>
-                        )}
-
-                        <button
-                            onClick={handleBooking}
-                            disabled={isSoldOut || bookingLoading || (showOTP && !otp)}
-                            className={`w-full py-4 px-6 rounded-xl font-bold text-lg transition shadow-lg ${isSoldOut || (successMsg && !showOTP)
-                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                : 'bg-gray-900 hover:bg-black text-white hover:shadow-xl hover:-translate-y-1'
-                                }`}
-                        >
-                            {bookingLoading ? 'Processing...' : (showOTP ? 'Verify OTP & Confirm' : (successMsg && !showOTP ? 'Request Sent' : (isSoldOut ? 'Sold Out' : 'Confirm Registration')))}
-                        </button>
-                        {error && <p className="text-red-500 mt-4 text-center font-medium bg-red-50 p-2 rounded">{error}</p>}
-                        {successMsg && <p className="text-green-600 mt-4 text-center font-medium bg-green-50 p-2 rounded">{successMsg}</p>}
-                    </div>
-                </div>
-            </div>
-        </div>
+      <div className="py-32 text-center font-mono text-[#52504A] tracking-widest text-xs uppercase">
+        // ACCESSING EXHIBITION ARCHIVE...
+      </div>
     );
+  }
+
+  if (!event) {
+    return (
+      <div className="py-24 text-center bg-white border border-[#DCD7CE] p-12 max-w-xl mx-auto">
+        <h2 className="font-serif text-2xl font-bold text-[#141413] mb-2">Exhibition Not Found</h2>
+        <p className="font-sans text-xs text-[#52504A]">The requested catalog item could not be retrieved.</p>
+      </div>
+    );
+  }
+
+  const tiers = event.ticketTiers && event.ticketTiers.length > 0
+    ? event.ticketTiers
+    : [{ _id: 't-def', name: 'Standard Admission', price: event.ticketPrice || 0, availableSeats: event.availableSeats || 50 }];
+
+  const currentTier = selectedTier || tiers[0];
+  const unitPrice = currentTier.price || 0;
+  const subtotal = unitPrice * ticketQuantity;
+  const serviceFee = subtotal > 0 ? 5 : 0;
+  const grandTotal = subtotal + serviceFee;
+
+  const eventDate = new Date(event.date);
+  const formattedDate = isNaN(eventDate.getTime()) ? 'UPCOMING ASSEMBLY' : eventDate.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  }).toUpperCase();
+
+  return (
+    <div className="space-y-12 pb-20 font-sans">
+      
+      {/* Top Breadcrumb */}
+      <div className="border-b border-[#DCD7CE] pb-4 flex justify-between items-center font-mono text-xs text-[#52504A]">
+        <span>EVENTS // {(event.category || 'Cultural').toUpperCase()}</span>
+        <span className="text-[#C84B31] font-bold">TICKETS AVAILABLE</span>
+      </div>
+
+      {/* Layout Grid */}
+      <div className={`grid grid-cols-1 ${user?.role === 'admin' ? 'max-w-4xl mx-auto' : 'lg:grid-cols-12'} gap-12 items-start`}>
+        
+        {/* Main Column */}
+        <div className={`${user?.role === 'admin' ? 'w-full' : 'lg:col-span-8'} space-y-8`}>
+          
+          <div className="bg-white border border-[#DCD7CE] overflow-hidden relative shadow-sm">
+            <img
+              src={event.bannerImage || event.image}
+              alt={event.title}
+              className="w-full h-[380px] object-cover filter contrast-[1.05]"
+            />
+            <div className="absolute top-4 left-4 bg-[#141413] text-white font-mono text-[10px] font-bold px-3 py-1 uppercase tracking-widest border border-white/20">
+              EVENT PASS
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <span className="font-mono text-xs text-[#C84B31] font-bold uppercase tracking-wider block">
+              EVENT #{event.customId || 'EVT-2026'}
+            </span>
+
+            <h1 className="font-serif font-bold text-4xl sm:text-5xl text-[#141413] leading-tight">
+              {event.title}
+            </h1>
+
+            <div className="flex items-center gap-6 font-mono text-xs text-[#52504A] border-y border-[#DCD7CE] py-3">
+              <div className="flex items-center gap-2">
+                <FaCalendarAlt className="text-[#C84B31] text-xs" />
+                <span className="text-[#141413] font-semibold">{formattedDate}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <FaClock className="text-[#C84B31] text-xs" />
+                <span className="text-[#141413] font-semibold">{event.time || '20:00'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <FaMapMarkerAlt className="text-[#C84B31] text-xs" />
+                <span className="text-[#141413] font-semibold">{event.venue?.name || event.location || 'Main Auditorium'}</span>
+              </div>
+            </div>
+
+            <p className="font-serif text-[#141413] text-base md:text-lg leading-relaxed pt-2">
+              {event.description}
+            </p>
+          </div>
+
+          {/* Schedule Timeline */}
+          <div className="bg-white border border-[#DCD7CE] p-6 md:p-8 space-y-6 shadow-sm">
+            <h3 className="font-serif font-bold text-2xl text-[#141413] border-b border-[#DCD7CE] pb-3">
+              Event Schedule
+            </h3>
+
+            <div className="space-y-4 font-mono text-xs">
+              <div className="flex justify-between items-start border-b border-[#DCD7CE] pb-3">
+                <div>
+                  <span className="text-[#C84B31] font-bold block text-sm">14:00 • DOORS OPEN</span>
+                  <span className="text-[#52504A] font-sans text-xs">Reception, ticket check-in, and welcome drinks.</span>
+                </div>
+                <span className="bg-[#EFEAE1] text-[#141413] px-2 py-1 text-[10px] uppercase font-bold border border-[#DCD7CE]">Arrival</span>
+              </div>
+
+              <div className="flex justify-between items-start border-b border-[#DCD7CE] pb-3">
+                <div>
+                  <span className="text-[#C84B31] font-bold block text-sm">14:30 • MAIN STAGE</span>
+                  <span className="text-[#52504A] font-sans text-xs">Keynote performance and main show.</span>
+                </div>
+                <span className="bg-[#EFEAE1] text-[#141413] px-2 py-1 text-[10px] uppercase font-bold border border-[#DCD7CE]">Main Show</span>
+              </div>
+
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-[#C84B31] font-bold block text-sm">17:00 • Q&A & NETWORKING</span>
+                  <span className="text-[#52504A] font-sans text-xs">Artist meet & greet and networking session.</span>
+                </div>
+                <span className="bg-[#EFEAE1] text-[#141413] px-2 py-1 text-[10px] uppercase font-bold border border-[#DCD7CE]">Closing</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Organizer Bio */}
+          <div className="bg-[#F9F7F2] border border-[#DCD7CE] p-6 md:p-8 flex items-start justify-between gap-6 relative">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <FaUser className="text-[#C84B31] text-xs" />
+                <span className="font-mono text-xs font-bold text-[#C84B31] uppercase">ORGANIZED BY</span>
+              </div>
+              <h4 className="font-serif font-bold text-xl text-[#141413]">
+                {event.organizer?.name || 'Eventora Team'}
+              </h4>
+              <p className="font-sans text-xs text-[#52504A] leading-relaxed max-w-md">
+                Verified event organizer on Eventora platform.
+              </p>
+            </div>
+            <div className="hidden sm:block opacity-20 transform rotate-6 pointer-events-none">
+              <FaStamp className="text-6xl text-[#C84B31]" />
+            </div>
+          </div>
+
+        </div>
+
+        {/* Sidebar Sticky Booking Box (Only shown for non-admin users) */}
+        {user?.role !== 'admin' && (
+          <div className="lg:col-span-4 sticky top-6">
+            <div className="bg-white border border-[#DCD7CE] p-6 space-y-6 shadow-sm relative">
+              
+              <div className="border-b border-[#DCD7CE] pb-4">
+                <span className="font-mono text-[10px] text-[#C84B31] font-bold uppercase tracking-widest block">// SELECT TICKETS</span>
+                <h3 className="font-serif font-bold text-2xl text-[#141413] mt-1">Book Your Tickets</h3>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 p-3 font-mono text-xs text-center font-bold">
+                  {error}
+                </div>
+              )}
+
+              {/* Ticket Tier Selection */}
+              <div className="space-y-3 font-mono text-xs">
+                <label className="text-[#52504A] font-bold uppercase block text-[11px]">SELECT TIER</label>
+                {tiers.map((t, idx) => {
+                  const isSoldOut = (t.availableSeats !== undefined ? t.availableSeats : 50) <= 0;
+                  const isSelected = selectedTier?.name === t.name || (!selectedTier && idx === 0);
+                  return (
+                    <div
+                      key={t._id || idx}
+                      onClick={() => !isSoldOut && setSelectedTier(t)}
+                      className={`p-3 border transition flex justify-between items-center ${
+                        isSoldOut
+                          ? 'border-gray-200 bg-gray-100 opacity-60 cursor-not-allowed'
+                          : isSelected
+                          ? 'border-[#C84B31] bg-[#FBE9E5] cursor-pointer'
+                          : 'border-[#DCD7CE] bg-white hover:border-[#141413] cursor-pointer'
+                      }`}
+                    >
+                      <div>
+                        <span className="font-bold text-[#141413] block">
+                          {t.name} {isSoldOut && <span className="text-red-600 text-[10px] font-bold uppercase">(SOLD OUT)</span>}
+                        </span>
+                        <span className="text-[10px] text-[#52504A]">
+                          {isSoldOut ? '0 seats available' : `${t.availableSeats !== undefined ? t.availableSeats : 50} seats left`}
+                        </span>
+                      </div>
+                      <span className="font-serif font-bold text-base text-[#C84B31]">
+                        ${t.price}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Quantity Controls */}
+              <div className="flex items-center justify-between font-mono text-xs border-t border-[#DCD7CE] pt-4">
+                <span className="text-[#52504A] font-bold uppercase">QUANTITY</span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setTicketQuantity(Math.max(1, ticketQuantity - 1))}
+                    className="w-7 h-7 bg-white border border-[#DCD7CE] font-bold hover:border-[#141413] text-[#141413] flex items-center justify-center"
+                  >
+                    -
+                  </button>
+
+                  <span className="font-bold text-sm w-4 text-center text-[#141413]">{ticketQuantity}</span>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const maxAvailable = (selectedTier || tiers[0])?.availableSeats !== undefined ? (selectedTier || tiers[0]).availableSeats : 6;
+                      setTicketQuantity(Math.min(Math.min(6, maxAvailable), ticketQuantity + 1));
+                    }}
+                    className="w-7 h-7 bg-white border border-[#DCD7CE] font-bold hover:border-[#141413] text-[#141413] flex items-center justify-center"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Summary Breakdown */}
+              <div className="space-y-2 font-mono text-xs border-t border-[#DCD7CE] pt-4">
+                <div className="flex justify-between text-[#52504A]">
+                  <span>SUBTOTAL</span>
+                  <span className="text-[#141413] font-bold">${subtotal}</span>
+                </div>
+                {subtotal > 0 && (
+                  <div className="flex justify-between text-[#52504A]">
+                    <span>SERVICE FEE</span>
+                    <span className="text-[#141413] font-bold">${serviceFee}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm font-bold text-[#141413] border-t border-[#DCD7CE] pt-2">
+                  <span>TOTAL DUE</span>
+                  <span className="text-[#C84B31] text-base font-mono">
+                    ${grandTotal}
+                  </span>
+                </div>
+              </div>
+
+              {/* Step 1 Booking Trigger Button */}
+              {((selectedTier || tiers[0])?.availableSeats !== undefined ? (selectedTier || tiers[0]).availableSeats : 50) <= 0 ? (
+                <button
+                  type="button"
+                  disabled
+                  className="w-full py-4 bg-gray-400 text-white font-sans font-bold text-xs uppercase tracking-wider border border-gray-400 cursor-not-allowed"
+                >
+                  SOLD OUT
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={bookingLoading}
+                  onClick={handleBookingTrigger}
+                  className="w-full py-4 bg-[#C84B31] hover:bg-[#C84B31]/90 text-white font-sans font-bold text-xs uppercase tracking-wider transition border border-[#C84B31] shadow-xs"
+                >
+                  {bookingLoading ? 'PROCESSING...' : 'CONFIRM & PAY / BOOK TICKET'}
+                </button>
+              )}
+
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* Step 3: Auth & OTP Verification Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={handleAuthModalSuccess}
+        bookingContext={pendingBooking}
+      />
+
+      {/* Confirmed Ticket Pass Modal */}
+      {confirmedTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#141413]/75 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white border border-[#DCD7CE] w-full max-w-md p-4 sm:p-6 relative shadow-2xl text-[#141413] max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setConfirmedTicket(null)}
+              className="absolute top-3 right-3 text-[#52504A] hover:text-[#141413] text-sm z-10"
+            >
+              <FaTimes />
+            </button>
+
+            <div className="text-center space-y-0.5 mb-3 border-b border-[#DCD7CE] pb-3">
+              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-[#FBE9E5] text-[#C84B31] mb-1">
+                <FaCheckCircle className="text-base" />
+              </div>
+              <h2 className="font-serif font-bold text-xl text-[#141413]">Pass Verified & Issued</h2>
+              <p className="font-mono text-[11px] text-[#52504A]">
+                Your digital ticket pass is confirmed and saved.
+              </p>
+            </div>
+
+            <TicketReceipt booking={confirmedTicket} onCloseModal={() => setConfirmedTicket(null)} />
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
 };
 
 export default EventDetail;

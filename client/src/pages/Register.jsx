@@ -24,54 +24,74 @@ const Register = () => {
                 setShowOTP(true);
                 setError('');
             } else {
-                await verifyOTP(email, otp);
-                navigate('/dashboard');
+                if (!otp || otp.length < 6) {
+                    setError('Please enter the 6-digit verification code');
+                    setLoading(false);
+                    return;
+                }
+                const data = await verifyOTP(email, otp);
+                if (data && data.token) {
+                    navigate('/dashboard');
+                } else {
+                    navigate('/login');
+                }
             }
         } catch (err) {
-            setError(err);
+            setError(typeof err === 'string' ? err : err.message || 'Verification or registration failed');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="max-w-md mx-auto mt-16 bg-white p-8 rounded-xl shadow-lg border border-gray-100">
-            <div className="text-center mb-8">
-                <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Create an Account</h2>
-                <p className="text-gray-500">Join Eventora today</p>
+        <div className="max-w-md mx-auto my-12 bg-white p-8 border border-[#DCD7CE] shadow-sm space-y-6 font-sans">
+            
+            <div className="text-center space-y-2 border-b border-[#DCD7CE] pb-6">
+                <div className="inline-flex items-center justify-center w-12 h-12 bg-[#F9F7F2] border border-[#141413] text-[#141413] font-serif font-bold text-2xl mb-2 shadow-xs">
+                    E
+                </div>
+                <h2 className="font-serif font-bold text-3xl text-[#141413]">Register Pass Account</h2>
+                <p className="font-mono text-xs text-[#52504A]">// JOIN EVENTORA CULTURAL GAZETTE</p>
             </div>
 
-            {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-6 text-center shadow-inner border border-red-100">{error}</div>}
+            {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 p-3 font-mono text-xs text-center font-bold">
+                    {error}
+                </div>
+            )}
 
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} className="space-y-4 font-mono text-xs">
                 {!showOTP ? (
                     <>
                         <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-2">Full Name</label>
+                            <label className="block text-[#52504A] font-bold uppercase mb-1">Full Name</label>
                             <input
                                 type="text"
                                 required
-                                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-gray-700 transition shadow-sm"
+                                placeholder="Your full name"
+                                className="w-full p-3 bg-white border border-[#DCD7CE] text-[#141413] placeholder-[#8C887B] focus:border-[#141413] focus:ring-1 focus:ring-[#141413] focus:outline-none"
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
+                            <label className="block text-[#52504A] font-bold uppercase mb-1">Email Address</label>
                             <input
                                 type="email"
                                 required
-                                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-gray-700 transition shadow-sm"
+                                placeholder="name@domain.com"
+                                className="w-full p-3 bg-white border border-[#DCD7CE] text-[#141413] placeholder-[#8C887B] focus:border-[#141413] focus:ring-1 focus:ring-[#141413] focus:outline-none"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-2">Password</label>
+                            <label className="block text-[#52504A] font-bold uppercase mb-1">Password</label>
                             <input
                                 type="password"
                                 required
-                                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-gray-700 transition shadow-sm"
+                                placeholder="••••••••"
+                                className="w-full p-3 bg-white border border-[#DCD7CE] text-[#141413] placeholder-[#8C887B] focus:border-[#141413] focus:ring-1 focus:ring-[#141413] focus:outline-none"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                             />
@@ -79,18 +99,21 @@ const Register = () => {
                     </>
                 ) : (
                     <div>
-                        <p className="text-sm text-green-700 bg-green-50 p-3 mb-4 rounded border border-green-200">
-                            An OTP has been sent to your email. Please verify your account.
+                        <p className="text-xs text-[#C84B31] bg-[#FBE9E5] p-3 mb-4 border border-[#F3C5BC] font-bold text-center">
+                            Verification code dispatched to {email}. Please verify your account.
                         </p>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Verification Code (OTP)</label>
+                        <label className="block text-[#C84B31] font-bold uppercase mb-1 text-center">
+                            6-Digit Verification Code
+                        </label>
                         <input
                             type="text"
                             required
-                            placeholder="6-digit code"
-                            className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-gray-700 transition shadow-sm font-bold tracking-widest text-center text-lg"
+                            placeholder="000000"
+                            className="w-full p-3.5 bg-[#F9F7F2] border border-[#C84B31] text-[#141413] font-bold tracking-[0.4em] text-center text-xl focus:outline-none"
                             value={otp}
-                            onChange={(e) => setOtp(e.target.value)}
+                            onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, ''))}
                             maxLength="6"
+                            autoFocus
                         />
                     </div>
                 )}
@@ -98,15 +121,15 @@ const Register = () => {
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-gray-900 text-white font-bold py-3 rounded-lg hover:bg-black focus:ring-4 focus:ring-gray-200 transition shadow-md mt-4"
+                    className="w-full py-3.5 bg-[#C84B31] hover:bg-[#C84B31]/90 text-white font-sans font-bold text-xs uppercase tracking-wider transition border border-[#C84B31] mt-4 shadow-xs"
                 >
-                    {loading ? 'Processing...' : (showOTP ? 'Verify & Complete' : 'Sign Up')}
+                    {loading ? 'PROCESSING...' : (showOTP ? 'VERIFY CODE & COMPLETE REGISTRATION' : 'CREATE GAZETTE ACCOUNT')}
                 </button>
             </form>
 
             {!showOTP && (
-                <p className="text-center mt-6 text-gray-600">
-                    Already have an account? <Link to="/login" className="text-gray-900 font-bold hover:underline">Sign in</Link>
+                <p className="text-center pt-4 border-t border-[#DCD7CE] font-sans text-xs text-[#52504A]">
+                    Already registered? <Link to="/login" className="text-[#C84B31] font-bold hover:underline">Sign in</Link>
                 </p>
             )}
         </div>

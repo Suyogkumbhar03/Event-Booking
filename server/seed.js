@@ -22,78 +22,136 @@ const users = [
 
 const events = [
     {
-        title: 'React & Node.js Developer Retreat',
-        description: 'Join us for a 3-day deep dive into modern full-stack web development. Perfect for developers looking to take their skills to the next level.',
-        date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), // 10 days from now
-        location: 'Silicon Valley Innovation Center, CA',
-        category: 'Technology',
-        totalSeats: 200,
-        ticketPrice: 0,
-        image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&q=80&w=800'
+        customId: 'evt-001',
+        slug: 'the-midnight-chamber-symphony',
+        title: 'The Midnight Chamber Symphony',
+        description: 'An intimate evening of candlelight acoustic performances featuring 18th-century chamber concertos alongside modern minimal compositions. Performed in Vienna\'s historic resonant hall with acoustic multi-channel live streaming.',
+        date: new Date('2026-10-12T20:30:00'),
+        time: '20:30',
+        venue: {
+            name: 'Wiener Musikverein Hall',
+            city: 'Vienna',
+            address: 'Musikvereinsplatz 1, 1010 Wien'
+        },
+        category: 'Classical & Orchestral',
+        bannerImage: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?q=80&w=1200',
+        ticketTiers: [
+            { name: 'Balcony Pass', price: 45, totalSeats: 120, availableSeats: 48 },
+            { name: 'Orchestra Front', price: 95, totalSeats: 60, availableSeats: 12 }
+        ],
+        status: 'Published'
     },
     {
-        title: 'Neon Nights EDM Festival',
-        description: 'Experience an unforgettable night of EDM, techno, and dazzling light shows with top DJs from around the globe.',
-        date: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000), // 20 days from now
-        location: 'Grand Arena, New York',
-        category: 'Music',
-        totalSeats: 500,
-        ticketPrice: 1500,
-        image: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&q=80&w=800'
+        customId: 'evt-002',
+        slug: 'neural-canvas-ai-generative-art-triennial',
+        title: 'Neural Canvas: AI & Generative Art Triennial',
+        description: 'A three-day gathering exploring autonomous creative agents, generative neural shaders, and spatial interactive installations. Featuring keynote dialogues with lead researchers and digital artisans.',
+        date: new Date('2026-10-18T10:00:00'),
+        time: '10:00',
+        venue: {
+            name: 'Mori Center for Generative Art',
+            city: 'Tokyo',
+            address: 'Roppongi Hills Mori Tower 53F, Tokyo'
+        },
+        category: 'Exhibition & Summit',
+        bannerImage: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?q=80&w=1200',
+        ticketTiers: [
+            { name: 'Day Pass', price: 30, totalSeats: 300, availableSeats: 180 },
+            { name: 'Keynote + Artist Dinner', price: 140, totalSeats: 40, availableSeats: 6 }
+        ],
+        status: 'Published'
     },
     {
-        title: 'Global Leaders Business Summit',
-        description: 'A premium gathering of CEOs, founders, and investors discussing the future of global commerce and AI integration.',
-        date: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
-        location: 'The Ritz-Carlton, London',
-        category: 'Business',
-        totalSeats: 150,
-        ticketPrice: 5000,
-        image: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&q=80&w=800'
+        customId: 'evt-003',
+        slug: 'sunburst-warehouse-deep-techno-all-night',
+        title: 'Sunburst Warehouse: Deep Techno All-Night',
+        description: 'Raw analog synth textures and hypnotic polyrhythms inside a decommissioned industrial power station. Powered by custom vintage horn speaker arrays.',
+        date: new Date('2026-10-24T23:00:00'),
+        time: '23:00',
+        venue: {
+            name: 'Kraftwerk Industrial Complex',
+            city: 'Berlin',
+            address: 'Köpenicker Str. 70, 10179 Berlin'
+        },
+        category: 'Underground Club',
+        bannerImage: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1200',
+        ticketTiers: [
+            { name: 'Early Entry (Before Midnight)', price: 20, totalSeats: 200, availableSeats: 95 },
+            { name: 'Full Night Pass', price: 35, totalSeats: 500, availableSeats: 210 }
+        ],
+        status: 'Published'
     },
     {
-        title: 'Modern Art Expo 2024',
-        description: 'Discover breathtaking contemporary and modern arts from underground and trending artists this season.',
-        date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // 5 days from now
-        location: 'Downtown Art Museum',
-        category: 'Art',
-        totalSeats: 300,
-        ticketPrice: 200,
-        image: 'https://images.unsplash.com/photo-1536924940846-227afb31e2a5?auto=format&fit=crop&q=80&w=800'
+        customId: 'evt-004',
+        slug: 'architectural-ceramics-masterclass-with-studio-ko',
+        title: 'Architectural Ceramics Masterclass with Studio Kō',
+        description: 'A hands-on masterclass focusing on high-fire reduction glazes, hand-thrown structural vessels, and Japanese wabi-sabi architectural forms.',
+        date: new Date('2026-11-02T14:00:00'),
+        time: '14:00',
+        venue: {
+            name: 'Studio Kō Kiln Workshop',
+            city: 'Kyoto',
+            address: 'Higashiyama Ward, Kyoto'
+        },
+        category: 'Workshop',
+        bannerImage: 'https://images.unsplash.com/photo-1565193566173-7a0ee3dbe261?q=80&w=1200',
+        ticketTiers: [
+            { name: 'Studio Seat & Clay Kit', price: 85, totalSeats: 16, availableSeats: 4 }
+        ],
+        status: 'Published'
     },
     {
-        title: 'Startup Pitch & Pitch Competition',
-        description: 'Watch 25 startups pitch for 1 million dollars in seed funding. Great networking for entrepreneurs and angel investors.',
-        date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-        location: 'Convention Center, Miami',
-        category: 'Business',
-        totalSeats: 250,
-        ticketPrice: 100,
-        image: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=800'
+        customId: 'evt-005',
+        slug: 'standup-in-the-round-an-evening-of-raw-satire',
+        title: 'Standup in the Round: An Evening of Raw Satire',
+        description: 'Unfiltered observational standup and topical satire staged inside an amphitheater setting. Intimate seating with zero distance between comic and audience.',
+        date: new Date('2026-11-09T19:30:00'),
+        time: '19:30',
+        venue: {
+            name: 'Soho Theatre Arena',
+            city: 'London',
+            address: '21 Dean St, London W1D 3NE'
+        },
+        category: 'Comedy',
+        bannerImage: 'https://images.unsplash.com/photo-1585699324551-f6c309eedeca?q=80&w=1200',
+        ticketTiers: [
+            { name: 'Standard Seat', price: 28, totalSeats: 150, availableSeats: 62 },
+            { name: 'Front Row + Drink', price: 50, totalSeats: 30, availableSeats: 8 }
+        ],
+        status: 'Published'
     },
     {
-        title: 'Cloud Computing Architecture Seminar',
-        description: 'A purely technical breakdown of scalable cloud solutions, multi-region routing, and serverless compute processing.',
-        date: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000), // 12 days from now
-        location: 'Tech Hub, Seattle',
-        category: 'Technology',
-        totalSeats: 100,
-        ticketPrice: 600,
-        image: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=800'
+        customId: 'evt-006',
+        slug: 'nordic-roast-slow-brew-invitational',
+        title: 'Nordic Roast & Slow Brew Invitational',
+        description: 'Featuring 12 independent Scandinavian micro-roasters showcasing single-origin light roasts, precision hand pours, and sensory cupping sessions.',
+        date: new Date('2026-11-15T09:00:00'),
+        time: '09:00',
+        venue: {
+            name: 'Kødbyen Market Hall',
+            city: 'Copenhagen',
+            address: 'Flæsketorvet 1, 1711 København'
+        },
+        category: 'Gastronomy',
+        bannerImage: 'https://images.unsplash.com/photo-1442512595331-e89e73853f31?q=80&w=1200',
+        ticketTiers: [
+            { name: 'Tasting Flight Pass', price: 38, totalSeats: 90, availableSeats: 31 }
+        ],
+        status: 'Published'
     }
 ];
 
 const seedDatabase = async () => {
     try {
-        await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/eventora');
-        console.log('\n✅ MongoDB connection open...');
+        const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/eventora';
+        await mongoose.connect(mongoUri);
+        console.log('\n✅ MongoDB connection open for seeding...');
 
         await User.deleteMany();
         await Event.deleteMany();
         await Booking.deleteMany();
         console.log('🗑️  Cleared existing data.');
 
-        // Hash user passwords
         const salt = await bcrypt.genSalt(10);
         const hashedUsers = users.map(u => ({
             ...u,
@@ -106,66 +164,57 @@ const seedDatabase = async () => {
         const normalUsers = createdUsers.filter(u => u.role === 'user');
         console.log(`👤 Created ${createdUsers.length} total dummy users.`);
 
-        // Link events to admin
         const eventsWithAdmin = events.map(e => ({
             ...e,
-            availableSeats: e.totalSeats,
-            createdBy: adminUser._id
+            organizer: adminUser._id
         }));
 
-        const createdEvents = await Event.insertMany(eventsWithAdmin);
-        console.log(`🎉 Created ${createdEvents.length} distinct events with Unsplash images.`);
+        const createdEvents = await Event.create(eventsWithAdmin);
+        console.log(`🎉 Created ${createdEvents.length} distinct events with customId ('evt-001'..'evt-006') and images.`);
 
-        // Generate Bookings Data
         const bookingsData = [];
+        let bookingCounter = 1000;
 
         for (const event of createdEvents) {
-            // Assign 3-6 random users to each event
             const randomCount = Math.floor(Math.random() * 4) + 3;
-            // Shuffle and pick random users
             const shuffledUsers = [...normalUsers].sort(() => 0.5 - Math.random());
             const selectedUsers = shuffledUsers.slice(0, randomCount);
 
             for (const user of selectedUsers) {
-                // Randomize statuses
-                const statuses = ['pending', 'confirmed', 'cancelled'];
-                const status = statuses[Math.floor(Math.random() * statuses.length)];
+                bookingCounter++;
+                const bookingRef = `EVT-2026-${bookingCounter}`;
+                const firstTier = (event.ticketTiers && event.ticketTiers[0]) ? event.ticketTiers[0] : null;
+                const tierName = firstTier ? firstTier.name : 'Standard Admission';
+                const ticketPrice = firstTier ? firstTier.price : (event.ticketPrice || 0);
 
-                let paymentStatus = 'not_paid';
-                if (status === 'confirmed' && event.ticketPrice > 0) {
-                    // Usually confirmed tickets are marked paid (90% of the time)
-                    paymentStatus = Math.random() > 0.1 ? 'paid' : 'not_paid';
-                } else if (event.ticketPrice === 0) {
-                    paymentStatus = 'paid';
-                }
+                const statuses = ['Paid', 'Pending', 'Refunded'];
+                const paymentStatus = statuses[Math.floor(Math.random() * statuses.length)];
+
+                const qrCodeData = `https://eventora.org/verify/${bookingRef}`;
 
                 bookingsData.push({
-                    userId: user._id,
-                    eventId: event._id,
-                    status: status,
-                    paymentStatus: paymentStatus,
-                    amount: event.ticketPrice
+                    bookingRef,
+                    event: event._id,
+                    user: user._id,
+                    tier: tierName,
+                    quantity: 1,
+                    totalPrice: ticketPrice,
+                    qrCodeData,
+                    paymentStatus,
+                    checkInStatus: false
                 });
 
-                // Deduct available seats specifically for confirmed tickets!
-                if (status === 'confirmed') {
-                    event.availableSeats -= 1;
+                if (paymentStatus === 'Paid' && firstTier) {
+                    firstTier.availableSeats = Math.max(0, firstTier.availableSeats - 1);
                     await event.save();
                 }
             }
         }
 
         await Booking.insertMany(bookingsData);
-        console.log(`🎫 Inserted ${bookingsData.length} randomized dummy bookings (confirmed, pending, cancelled, paid, not_paid).`);
-
+        console.log(`🎫 Inserted ${bookingsData.length} randomized dummy bookings.`);
         console.log('\n🚀 Database seeded successfully!');
-        console.log('-------------------------------------------');
-        console.log('Admin Email: admin@eventora.com');
-        console.log('User Email:  user@eventora.com');
-        console.log('Password for all users: password123');
-        console.log('-------------------------------------------\n');
-
-        process.exit();
+        process.exit(0);
     } catch (error) {
         console.error('❌ Error seeding data:', error);
         process.exit(1);

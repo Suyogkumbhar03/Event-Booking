@@ -2,12 +2,80 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: #f9fafb;
+@layer base {
+  body {
+    background-color: #F9F7F2;
+    color: #141413;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  input, select, textarea {
+    color: #141413 !important;
+  }
+}
+
+/* Editorial Linework & Perforation Utilities */
+@layer utilities {
+  /* Crisp double rules for newspaper headers */
+  .border-double-ink {
+    border-top: 3px double #141413;
+    border-bottom: 3px double #141413;
+  }
+
+  /* Paper Ticket Stub Perforation Cutouts */
+  .ticket-stub-perforation {
+    position: relative;
+    background-color: #FFFFFF;
+  }
+
+  .ticket-stub-perforation::before,
+  .ticket-stub-perforation::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 18px;
+    height: 18px;
+    background-color: #F9F7F2;
+    border-radius: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+  }
+
+  .ticket-stub-perforation::before {
+    left: -9px;
+    border: 1px solid #DCD7CE;
+  }
+
+  .ticket-stub-perforation::after {
+    right: -9px;
+    border: 1px solid #DCD7CE;
+  }
+
+  .dashed-ink-divider {
+    background-image: linear-gradient(to right, #B8B2A6 50%, transparent 50%);
+    background-size: 10px 1px;
+    background-repeat: repeat-x;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F9F7F2;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #DCD7CE;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #C84B31;
 }

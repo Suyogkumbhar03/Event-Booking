@@ -2,93 +2,250 @@ const User = require('../models/User');
 const OTP = require('../models/OTP');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { sendOTPEmail } = require('../utils/email');
+const { sendOtpEmail } = require('../utils/sendEmail');
 
-const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
+const generateOTPCode = () => Math.floor(100000 + Math.random() * 900000).toString();
 
-const generateToken = (id, role) => {
-    return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '30d' });
+const generateToken = (id, role, email) => {
+    return jwt.sign({ id, role, email }, process.env.JWT_SECRET || 'eventora_jwt_secure_key_2026', { expiresIn: '30d' });
 };
 
-exports.register = async (req, res) => {
+// @desc    Send OTP to user's email for authentication / registration
+// @route   POST /api/auth/send-otp
+// @access  Public
+exports.sendOTP = async (req, res) => {
     try {
-        const { name, email, password, role } = req.body;
-        let user = await User.findOne({ email });
-        if (user) return res.status(400).json({ message: 'User already exists' });
+        const { email } = req.body;
 
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        user = await User.create({
-            name,
-            email,
-            password: hashedPassword,
-            role: 'user', // Hardcoded to prevent frontend passing role
-            isVerified: false
-        });
-
-        const otp = generateOTP();
-        await OTP.create({ email, otp, action: 'account_verification' });
-        await sendOTPEmail(email, otp, 'account_verification');
-
-        res.status(201).json({
-            message: 'OTP sent to email. Please verify.',
-            email: user.email
-        });
-    } catch (error) {
-        res.status(500).json({ message: 'Server Error', error: error.message });
-    }
-};
-
-exports.login = async (req, res) => {
-    try {
-        const { email, password } = req.body;
-        const user = await User.findOne({ email });
-        if (!user) return res.status(400).json({ message: 'Invalid credentials' });
-
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
-
-        if (!user.isVerified && user.role !== 'admin') {
-            const otp = generateOTP();
-            await OTP.findOneAndDelete({ email: user.email, action: 'account_verification' });
-            await OTP.create({ email: user.email, otp, action: 'account_verification' });
-            await sendOTPEmail(user.email, otp, 'account_verification');
-            return res.status(403).json({ message: 'Account not verified', needsVerification: true, email: user.email });
+        if (!email) {
+            return res.status(400).json({ success: false, message: 'Email address is required' });
         }
 
-        res.json({
-            _id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            token: generateToken(user.id, user.role)
+        const normalizedEmail = email.toLowerCase().trim();
+        const otpCode = generateOTPCode();
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiration
+
+        let user = await User.findOne({ email: normalizedEmail });
+
+        if (user) {
+            user.otp = otpCode;
+            user.otpExpiresAt = expiresAt;
+            await user.save();
+        } else {
+            // Provisional user creation for seamless OTP registration
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash('DefaultOtpPass123!', salt);
+            const defaultName = normalizedEmail.split('@')[0];
+
+            user = await User.create({
+                name: defaultName,
+                email: normalizedEmail,
+                password: hashedPassword,
+                role: 'user',
+                isVerified: false,
+                otp: otpCode,
+                otpExpiresAt: expiresAt
+            });
+        }
+
+        // Record in OTP collection for backup verification
+        await OTP.deleteMany({ email: normalizedEmail });
+        await OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' });
+
+        // Send HTML OTP Email via Nodemailer
+        await sendOtpEmail(normalizedEmail, otpCode);
+
+        res.status(200).json({
+            success: true,
+            message: 'Verification code sent to your email'
         });
     } catch (error) {
-        res.status(500).json({ message: 'Server Error', error: error.message });
+        console.error('Error in sendOTP controller:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send verification code',
+            error: error.message
+        });
     }
 };
 
+// @desc    Verify OTP and log in / complete registration
+// @route   POST /api/auth/verify-otp
+// @access  Public
 exports.verifyOTP = async (req, res) => {
     try {
         const { email, otp } = req.body;
-        const validOTP = await OTP.findOne({ email, otp, action: 'account_verification' });
 
-        if (!validOTP) {
-            return res.status(400).json({ message: 'Invalid or expired OTP' });
+        if (!email || !otp) {
+            return res.status(400).json({ success: false, message: 'Email and verification code are required' });
         }
 
-        const user = await User.findOneAndUpdate({ email }, { isVerified: true }, { new: true });
-        await OTP.deleteOne({ _id: validOTP._id }); // Delete OTP after usage
+        const normalizedEmail = email.toLowerCase().trim();
+        const cleanOtp = String(otp).trim();
 
-        res.json({
-            _id: user.id,
+        let user = await User.findOne({ email: normalizedEmail });
+        const backupOTPRecord = await OTP.findOne({ email: normalizedEmail, otp: cleanOtp });
+
+        if (!user && !backupOTPRecord) {
+            return res.status(400).json({ success: false, message: 'User not found. Please request a new verification code.' });
+        }
+
+        // Check if OTP matches either user.otp or backup OTP collection record
+        const isValidInUser = user && user.otp && String(user.otp).trim() === cleanOtp;
+
+        if (!isValidInUser && !backupOTPRecord) {
+            return res.status(400).json({ success: false, message: 'Invalid verification code. Please check and try again.' });
+        }
+
+        // Check expiration only if verified via user.otp and no valid backupOTPRecord exists
+        const now = new Date();
+        if (user && user.otpExpiresAt && user.otpExpiresAt < now && !backupOTPRecord) {
+            return res.status(400).json({ success: false, message: 'Verification code expired. Please request a new code.' });
+        }
+
+        // If user document didn't exist yet, create verified user record
+        if (!user) {
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash('DefaultOtpPass123!', salt);
+            user = await User.create({
+                name: normalizedEmail.split('@')[0],
+                email: normalizedEmail,
+                password: hashedPassword,
+                role: 'user',
+                isVerified: true
+            });
+        } else {
+            // Update user status
+            user.otp = undefined;
+            user.otpExpiresAt = undefined;
+            user.isVerified = true;
+            await user.save();
+        }
+
+        // Clean up backup OTP records
+        await OTP.deleteMany({ email: normalizedEmail });
+
+        const token = generateToken(user._id, user.role, user.email);
+
+        res.status(200).json({
+            success: true,
+            message: 'Verification successful',
+            _id: user._id,
             name: user.name,
             email: user.email,
             role: user.role,
-            token: generateToken(user.id, user.role)
+            isVerified: user.isVerified,
+            token
         });
     } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
+        console.error('Error in verifyOTP controller:', error);
+        res.status(500).json({ success: false, message: 'Server error during verification', error: error.message });
     }
 };
+
+// @desc    Register a new user (traditional email/password)
+// @route   POST /api/auth/register
+// @access  Public
+exports.register = async (req, res) => {
+    try {
+        const { name, email, password } = req.body;
+        const normalizedEmail = email.toLowerCase().trim();
+
+        let user = await User.findOne({ email: normalizedEmail });
+        if (user && user.isVerified) {
+            return res.status(400).json({ success: false, message: 'User with this email already exists' });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+        const otpCode = generateOTPCode();
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+        if (user) {
+            user.name = name || user.name;
+            user.password = hashedPassword;
+            user.otp = otpCode;
+            user.otpExpiresAt = expiresAt;
+            await user.save();
+        } else {
+            user = await User.create({
+                name,
+                email: normalizedEmail,
+                password: hashedPassword,
+                role: 'user',
+                isVerified: false,
+                otp: otpCode,
+                otpExpiresAt: expiresAt
+            });
+        }
+
+        await OTP.deleteMany({ email: normalizedEmail });
+        await OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' });
+
+        await sendOtpEmail(normalizedEmail, otpCode);
+
+        res.status(201).json({
+            success: true,
+            message: 'Verification code sent to your email. Please verify to complete registration.',
+            email: user.email
+        });
+    } catch (error) {
+        console.error('Error in register controller:', error);
+        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Authenticate user & get token
+// @route   POST /api/auth/login
+// @access  Public
+exports.login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        const normalizedEmail = email.toLowerCase().trim();
+
+        const user = await User.findOne({ email: normalizedEmail });
+        if (!user) {
+            return res.status(400).json({ success: false, message: 'Invalid email or password' });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ success: false, message: 'Invalid email or password' });
+        }
+
+        if (!user.isVerified && user.role !== 'admin') {
+            const otpCode = generateOTPCode();
+            user.otp = otpCode;
+            user.otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
+            await user.save();
+
+            await OTP.deleteMany({ email: normalizedEmail });
+            await OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' });
+
+            await sendOtpEmail(normalizedEmail, otpCode);
+
+            return res.status(403).json({
+                success: false,
+                message: 'Account not verified. A new verification code has been sent to your email.',
+                needsVerification: true,
+                email: user.email
+            });
+        }
+
+        const token = generateToken(user._id, user.role, user.email);
+
+        res.json({
+            success: true,
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            token
+        });
+    } catch (error) {
+        console.error('Error in login controller:', error);
+        res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+    }
+};
+
+exports.sendBookingOTP = exports.sendOTP;
