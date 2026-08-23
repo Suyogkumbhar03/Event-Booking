@@ -18,10 +18,12 @@ const Register = () => {
         e.preventDefault();
         setLoading(true);
         setError('');
+        const isRegistering = !showOTP;
         try {
-            if (!showOTP) {
-                await register(name, email, password);
+            if (isRegistering) {
+                // Optimistically transition to OTP entry screen instantly
                 setShowOTP(true);
+                await register(name, email, password);
                 setError('');
             } else {
                 if (!otp || otp.length < 6) {
@@ -37,6 +39,10 @@ const Register = () => {
                 }
             }
         } catch (err) {
+            if (isRegistering) {
+                // Revert optimistic transition on registration/SMTP dispatch failure
+                setShowOTP(false);
+            }
             setError(typeof err === 'string' ? err : err.message || 'Verification or registration failed');
         } finally {
             setLoading(false);

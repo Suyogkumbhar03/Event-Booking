@@ -34,10 +34,15 @@ const AuthModal = ({ isOpen, onClose, onSuccess, bookingContext }) => {
     setSuccessMsg('');
 
     try {
-      await sendOTP(email);
+      // Optimistically transition to step 2 (Enter OTP code) instantly
       setStep(2);
       setSuccessMsg(`Verification code dispatched to ${email}`);
+
+      await sendOTP(email);
     } catch (err) {
+      // Revert step state if transmission fails
+      setStep(1);
+      setSuccessMsg('');
       setError(typeof err === 'string' ? err : err.message || 'Failed to dispatch OTP verification code');
     } finally {
       setLoading(false);
