@@ -11,7 +11,7 @@ const smtpHost = (process.env.EMAIL_HOST || process.env.SMTP_HOST || "smtp.gmail
 const smtpPort = parseInt(process.env.EMAIL_PORT || process.env.SMTP_PORT || "465", 10);
 const isSecure = smtpPort === 465;
 
-// Pure Nodemailer Transporter
+// Pure Nodemailer Transporter with 5-second socket timeouts
 const transporter = nodemailer.createTransport(
   cleanUser && cleanPass
     ? {
@@ -24,7 +24,10 @@ const transporter = nodemailer.createTransport(
         },
         tls: {
           rejectUnauthorized: false
-        }
+        },
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 5000
       }
     : {
         service: "gmail",
@@ -34,19 +37,24 @@ const transporter = nodemailer.createTransport(
         },
         tls: {
           rejectUnauthorized: false
-        }
+        },
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 5000
       }
 );
 
-// Verify SMTP connection configuration on server startup
-transporter.verify((error, success) => {
-  if (error) {
-    console.warn("\n⚠️ [Nodemailer SMTP Notice] SMTP transporter verification status:", error.message);
-    console.warn("📌 If testing locally without active SMTP credentials, OTP codes are saved in MongoDB and printed in terminal logs below!\n");
-  } else {
-    console.log("✅ Nodemailer SMTP connection successfully verified and ready to send live emails");
-  }
-});
+// Verify SMTP connection configuration on server startup (non-blocking)
+if (cleanUser && cleanPass) {
+  transporter.verify((error, success) => {
+    if (error) {
+      console.warn("\n⚠️ [Nodemailer SMTP Notice] SMTP transporter verification status:", error.message);
+      console.warn("📌 OTP codes are saved in MongoDB and printed in terminal logs below!\n");
+    } else {
+      console.log("✅ Nodemailer SMTP connection successfully verified and ready to send live emails");
+    }
+  });
+}
 
 const sendOtpEmail = async (toEmail, otpCode) => {
   const targetEmail = toEmail.toLowerCase().trim();
@@ -55,6 +63,12 @@ const sendOtpEmail = async (toEmail, otpCode) => {
   console.log("\n=======================================================");
   console.log(`[EVENTORA OTP GENERATED] Recipient: ${targetEmail} | OTP: ${otpCode}`);
   console.log("=======================================================\n");
+
+  if (!cleanUser || !cleanPass) {
+    console.log("ℹ️ [Nodemailer] EMAIL_USER / EMAIL_PASS not configured in Render environment variables.");
+    console.log("📌 OTP Code active in MongoDB & logged above. Add EMAIL_USER & EMAIL_PASS on Render to receive real emails.");
+    return { success: true, messageId: `dev-otp-${Date.now()}` };
+  }
 
   const fromSender = cleanUser ? `"Eventora" <${cleanUser}>` : '"Eventora Access" <no-reply@eventora.com>';
 
