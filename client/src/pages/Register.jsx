@@ -129,7 +129,7 @@ const Register = () => {
                     disabled={loading}
                     className="w-full py-3.5 bg-[#C84B31] hover:bg-[#C84B31]/90 text-white font-sans font-bold text-xs uppercase tracking-wider transition border border-[#C84B31] mt-4 shadow-xs"
                 >
-                    {loading ? 'PROCESSING...' : (showOTP ? 'VERIFY CODE & COMPLETE REGISTRATION' : 'CREATE GAZETTE ACCOUNT')}
+                    {loading ? 'PROCESSING...' : (showOTP ? 'VERIFY CODE & COMPLETE REGISTRATION' : 'CREATE ACCOUNT')}
                 </button>
             </form>
 

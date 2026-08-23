@@ -22,6 +22,10 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+    // Ensure all requests prefixed with '/' map correctly to '/api' base paths
+    if (config.url && config.url.startsWith('/') && !config.url.startsWith('/api')) {
+        config.url = `/api${config.url}`;
+    }
     const token = localStorage.getItem('token');
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
