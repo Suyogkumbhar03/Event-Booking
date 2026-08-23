@@ -48,18 +48,11 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// API Routes (supports both /api/* and /* endpoints for maximum resilience)
-app.use('/api/auth', authRoutes);
-app.use('/auth', authRoutes);
-
-app.use('/api/events', eventRoutes);
-app.use('/events', eventRoutes);
-
-app.use('/api/bookings', bookingRoutes);
-app.use('/bookings', bookingRoutes);
-
-app.use('/api/admin', adminRoutes);
-app.use('/admin', adminRoutes);
+// API Routes (supports /api/*, /*, and defensive /api/api/* endpoints for 100% route safety)
+app.use(['/api/auth', '/auth', '/api/api/auth'], authRoutes);
+app.use(['/api/events', '/events', '/api/api/events'], eventRoutes);
+app.use(['/api/bookings', '/bookings', '/api/api/bookings'], bookingRoutes);
+app.use(['/api/admin', '/admin', '/api/api/admin'], adminRoutes);
 
 // Global 404 Route Handler
 app.use((req, res, next) => {

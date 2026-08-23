@@ -22,9 +22,14 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-    // Ensure all requests prefixed with '/' map correctly to '/api' base paths
-    if (config.url && config.url.startsWith('/') && !config.url.startsWith('/api')) {
-        config.url = `/api${config.url}`;
+    if (config.url) {
+        if (!config.url.startsWith('/')) {
+            config.url = `/${config.url}`;
+        }
+        // Prevent double /api/api/ by stripping /api prefix if config.url contains it (since baseURL ends with /api)
+        if (config.url.startsWith('/api/')) {
+            config.url = config.url.substring(4); // Strips '/api', leaving '/auth/...'
+        }
     }
     const token = localStorage.getItem('token');
     if (token) {
