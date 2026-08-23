@@ -37,50 +37,41 @@ const Login = () => {
             setError('Please enter a valid email address');
             return;
         }
-        setLoading(true);
         setError('');
         setSuccessMsg('');
-        try {
-            // Optimistically transition to step 2 (Enter OTP code) instantly
-            setStep(2);
-            setSuccessMsg(`Verification code dispatched to ${email}`);
-            setResendTimer(60);
-            setIsTimerActive(true);
 
-            await sendOTP(email);
-        } catch (err) {
-            // Revert transition state if registration/dispatch fails
+        // Optimistically show OTP step instantly — no loading spinner needed
+        setStep(2);
+        setSuccessMsg(`Verification code dispatched to ${email}`);
+        setResendTimer(60);
+        setIsTimerActive(true);
+
+        sendOTP(email).catch((err) => {
+            // Revert if dispatch fails
             setStep(1);
             setSuccessMsg('');
             setIsTimerActive(false);
             setResendTimer(0);
             setError(typeof err === 'string' ? err : err.message || 'Failed to send OTP code');
-        } finally {
-            setLoading(false);
-        }
+        });
     };
 
     const handleResendCode = async () => {
         if (resendTimer > 0 || isTimerActive) return;
         setError('');
         setSuccessMsg('');
-        setLoading(true);
-        try {
-            // Optimistically block button and show dispatch message
-            setResendTimer(60);
-            setIsTimerActive(true);
-            setSuccessMsg('A fresh verification code has been dispatched.');
 
-            await sendOTP(email);
-        } catch (err) {
-            // Revert state if resend fails
+        // Optimistically reset timer and show dispatch message instantly
+        setResendTimer(60);
+        setIsTimerActive(true);
+        setSuccessMsg('A fresh verification code has been dispatched.');
+
+        sendOTP(email).catch((err) => {
             setIsTimerActive(false);
             setResendTimer(0);
             setSuccessMsg('');
             setError(typeof err === 'string' ? err : err.message || 'Failed to resend verification code');
-        } finally {
-            setLoading(false);
-        }
+        });
     };
 
     const handleVerifyOTP = async (e) => {

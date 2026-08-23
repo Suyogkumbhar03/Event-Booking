@@ -16,36 +16,33 @@ const Register = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
         setError('');
-        const isRegistering = !showOTP;
-        try {
-            if (isRegistering) {
-                // Optimistically transition to OTP entry screen instantly
-                setShowOTP(true);
-                await register(name, email, password);
-                setError('');
-            } else {
-                if (!otp || otp.length < 6) {
-                    setError('Please enter the 6-digit verification code');
-                    setLoading(false);
-                    return;
-                }
+
+        if (!showOTP) {
+            // Optimistically transition — show OTP screen instantly, no loading spin
+            setShowOTP(true);
+            register(name, email, password).catch((err) => {
+                setShowOTP(false);
+                setError(typeof err === 'string' ? err : err.message || 'Registration failed');
+            });
+        } else {
+            if (!otp || otp.length < 6) {
+                setError('Please enter the 6-digit verification code');
+                return;
+            }
+            setLoading(true);
+            try {
                 const data = await verifyOTP(email, otp);
                 if (data && data.token) {
                     navigate('/dashboard');
                 } else {
                     navigate('/login');
                 }
+            } catch (err) {
+                setError(typeof err === 'string' ? err : err.message || 'Verification failed');
+            } finally {
+                setLoading(false);
             }
-        } catch (err) {
-            if (isRegistering) {
-                // Revert optimistic transition on registration/SMTP dispatch failure
-                setShowOTP(false);
-            }
-            setError(typeof err === 'string' ? err : err.message || 'Verification or registration failed');
-        } finally {
-            setLoading(false);
         }
     };
 

@@ -29,24 +29,18 @@ const AuthModal = ({ isOpen, onClose, onSuccess, bookingContext }) => {
       setError('Please enter a valid email address');
       return;
     }
-    setLoading(true);
     setError('');
     setSuccessMsg('');
 
-    try {
-      // Optimistically transition to step 2 (Enter OTP code) instantly
-      setStep(2);
-      setSuccessMsg(`Verification code dispatched to ${email}`);
+    // Optimistically transition to OTP step instantly — no loading spinner
+    setStep(2);
+    setSuccessMsg(`Verification code dispatched to ${email}`);
 
-      await sendOTP(email);
-    } catch (err) {
-      // Revert step state if transmission fails
+    sendOTP(email).catch((err) => {
       setStep(1);
       setSuccessMsg('');
       setError(typeof err === 'string' ? err : err.message || 'Failed to dispatch OTP verification code');
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   const handleVerifyOTP = async (e) => {
