@@ -25,7 +25,7 @@ exports.register = async (req, res) => {
             return res.status(400).json({ success: false, message: 'An account with this email already exists. Please log in.' });
         }
 
-        const salt = await bcrypt.genSalt(8);
+        const salt = await bcrypt.genSalt(6);
         const hashedPwd = await bcrypt.hash(password, salt);
 
         const user = await User.create({
