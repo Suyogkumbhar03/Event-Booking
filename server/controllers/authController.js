@@ -1,275 +1,227 @@
-const User = require('../models/User');
-const OTP = require('../models/OTP');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const OTP = require('../models/OTP');
 const { sendOtpEmail } = require('../utils/sendEmail');
 
-const generateOTPCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const generateToken = (id, role, email) => {
-    return jwt.sign({ id, role, email }, process.env.JWT_SECRET || 'eventora_jwt_secure_key_2026', { expiresIn: '30d' });
+const generateOTP = () =>
+  Math.floor(100000 + Math.random() * 900000).toString();
+
+const generateToken = (user) =>
+  jwt.sign(
+    { id: user._id, role: user.role, email: user.email },
+    process.env.JWT_SECRET || 'eventora_jwt_secret_2026',
+    { expiresIn: '30d' }
+  );
+
+/**
+ * Save or update a User with the given OTP, then record it in the OTP collection.
+ * Returns the saved user document.
+ */
+const saveUserOTP = async (email, otpCode, extraFields = {}) => {
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 min
+
+  let user = await User.findOne({ email });
+
+  if (!user) {
+    // Create a minimal user document (password can be set later on first verify)
+    const salt = await bcrypt.genSalt(8);
+    const defaultPwd = await bcrypt.hash('eventora_placeholder', salt);
+    user = new User({
+      name: extraFields.name || email.split('@')[0],
+      email,
+      password: extraFields.password || defaultPwd,
+      role: 'user',
+      isVerified: false,
+    });
+  } else {
+    // Allow update of name/password if provided
+    if (extraFields.name) user.name = extraFields.name;
+    if (extraFields.password) user.password = extraFields.password;
+  }
+
+  user.otp = otpCode;
+  user.otpExpiresAt = expiresAt;
+  await user.save();
+
+  // Keep backup OTP record
+  await OTP.deleteMany({ email });
+  await OTP.create({ email, otp: otpCode, action: 'account_verification' });
+
+  return user;
 };
 
-// @desc    Send OTP to user's email for authentication / registration
-// @route   POST /api/auth/send-otp
-// @access  Public
+/**
+ * Fire-and-forget email. Never blocks the HTTP response.
+ */
+const dispatchEmail = (email, otp) => {
+  sendOtpEmail(email, otp)
+    .then(() => console.log(`📧 OTP email sent to ${email}`))
+    .catch((err) => console.error(`❌ OTP email failed (${email}):`, err.message));
+};
+
+// ─── Controllers ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/auth/send-otp
+ * Generate OTP, save to DB, send email in background.
+ */
 exports.sendOTP = async (req, res) => {
-    console.log("➡️ Received send-otp request body:", req.body);
-    const email = req.body.email?.trim().toLowerCase();
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required.' });
 
-    if (!email) {
-        return res.status(400).json({ success: false, message: "Email is required." });
-    }
+    const otp = generateOTP();
+    await saveUserOTP(email, otp);
+    dispatchEmail(email, otp);
 
-    try {
-        const otpCode = generateOTPCode();
-        const otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiration
-
-        // 1. Save or update user with OTP in MongoDB FIRST
-        let user = await User.findOne({ email });
-        if (!user) {
-            // User model requires name and password — provide defaults for OTP-only flow
-            user = new User({
-                name: email.split('@')[0],
-                email,
-                password: '$2a$08$KP7yOkhgCrUKsIOH8.HdbuL8Iqhs81qTG/W3Sf31Ci3QY9Rk/tTZO',
-                role: 'user',
-                isVerified: false
-            });
-        }
-        user.otp = otpCode;
-        user.otpExpiresAt = otpExpiresAt;
-        await user.save();
-
-        await Promise.all([
-            OTP.deleteMany({ email }),
-            OTP.create({ email, otp: otpCode, action: 'account_verification' })
-        ]);
-
-        console.log(`✅ Saved OTP ${otpCode} in database for ${email}`);
-
-        // 2. Attempt async email dispatch without hanging the HTTP response
-        sendOtpEmail(email, otpCode)
-            .then(() => console.log(`📧 Email delivered to ${email}`))
-            .catch((mailErr) => console.error("❌ Mail dispatch error:", mailErr.message));
-
-        return res.status(200).json({
-            success: true,
-            message: "Verification code sent to your email."
-        });
-    } catch (err) {
-        console.error("❌ sendOTP controller error:", err);
-        return res.status(500).json({ success: false, message: err.message });
-    }
+    return res.status(200).json({ success: true, message: 'Verification code sent to your email.' });
+  } catch (err) {
+    console.error('sendOTP error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-// @desc    Verify OTP and log in / complete registration
-// @route   POST /api/auth/verify-otp
-// @access  Public
-exports.verifyOTP = async (req, res) => {
-    try {
-        const { email, otp } = req.body;
-
-        if (!email || !otp) {
-            return res.status(400).json({ success: false, message: 'Email and verification code are required' });
-        }
-
-        const normalizedEmail = email.toLowerCase().trim();
-        const cleanOtp = String(otp).trim();
-
-        let user = await User.findOne({ email: normalizedEmail });
-        const backupOTPRecord = await OTP.findOne({ email: normalizedEmail, otp: cleanOtp });
-
-        if (!user && !backupOTPRecord) {
-            return res.status(400).json({ success: false, message: 'User not found. Please request a new verification code.' });
-        }
-
-        // Check if OTP matches either user.otp or backup OTP collection record
-        const isValidInUser = user && user.otp && String(user.otp).trim() === cleanOtp;
-
-        if (!isValidInUser && !backupOTPRecord) {
-            return res.status(400).json({ success: false, message: 'Invalid verification code. Please check and try again.' });
-        }
-
-        // Check expiration only if verified via user.otp and no valid backupOTPRecord exists
-        const now = new Date();
-        if (user && user.otpExpiresAt && user.otpExpiresAt < now && !backupOTPRecord) {
-            return res.status(400).json({ success: false, message: 'Verification code expired. Please request a new code.' });
-        }
-
-        // If user document didn't exist yet, create verified user record instantly
-        if (!user) {
-            const hashedPassword = '$2a$10$Wp2c4mP1bZ5/9r5KzX4uLeN1b0.pT6/4Z.5F7S8.q1.';
-            user = await User.create({
-                name: normalizedEmail.split('@')[0],
-                email: normalizedEmail,
-                password: hashedPassword,
-                role: 'user',
-                isVerified: true
-            });
-        } else {
-            user.otp = undefined;
-            user.otpExpiresAt = undefined;
-            user.isVerified = true;
-            await user.save();
-        }
-
-        // Clean up backup OTP records
-        await OTP.deleteMany({ email: normalizedEmail });
-
-        const token = generateToken(user._id, user.role, user.email);
-
-        res.status(200).json({
-            success: true,
-            message: 'Verification successful',
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            isVerified: user.isVerified,
-            token
-        });
-    } catch (error) {
-        console.error('Error in verifyOTP controller:', error);
-        res.status(500).json({ success: false, message: 'Server error during verification', error: error.message });
-    }
-};
-
-// @desc    Register a new user (traditional email/password)
-// @route   POST /api/auth/register
-// @access  Public
+/**
+ * POST /api/auth/register
+ * Hash password, save user + OTP, send email in background.
+ */
 exports.register = async (req, res) => {
-    console.log("➡️ Received register request body:", req.body);
-    try {
-        const { name, email, password } = req.body;
-        if (!email) {
-            return res.status(400).json({ success: false, message: 'Email address is required' });
-        }
+  try {
+    const name = (req.body.name || '').trim();
+    const email = (req.body.email || '').trim().toLowerCase();
+    const password = req.body.password || '';
 
-        const normalizedEmail = email.toLowerCase().trim();
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required.' });
 
-        let user = await User.findOne({ email: normalizedEmail });
-        if (user && user.isVerified) {
-            return res.status(400).json({ success: false, message: 'User with this email already exists' });
-        }
-
-        const salt = await bcrypt.genSalt(8);
-        const hashedPassword = await bcrypt.hash(password || 'password123', salt);
-        const otpCode = generateOTPCode();
-        const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-
-        // 1. Save user & OTP to MongoDB FIRST
-        if (user) {
-            user.name = name || user.name;
-            user.password = hashedPassword;
-            user.otp = otpCode;
-            user.otpExpiresAt = expiresAt;
-            await user.save();
-        } else {
-            user = await User.create({
-                name: name || normalizedEmail.split('@')[0],
-                email: normalizedEmail,
-                password: hashedPassword,
-                role: 'user',
-                isVerified: false,
-                otp: otpCode,
-                otpExpiresAt: expiresAt
-            });
-        }
-
-        await Promise.all([
-            OTP.deleteMany({ email: normalizedEmail }),
-            OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' })
-        ]);
-
-        console.log(`✅ Saved OTP ${otpCode} in database for ${normalizedEmail}`);
-
-        // 2. Non-blocking async email dispatch
-        sendOtpEmail(normalizedEmail, otpCode)
-            .then(() => console.log(`📧 Email delivered to ${normalizedEmail}`))
-            .catch((mailErr) => console.error("❌ Mail dispatch error:", mailErr.message));
-
-        return res.status(201).json({
-            success: true,
-            message: 'Verification code sent to your email.',
-            email: user.email
-        });
-    } catch (error) {
-        console.error('❌ Error in register controller:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to process registration.',
-            error: error.message
-        });
+    // Check for already-verified user
+    const existing = await User.findOne({ email });
+    if (existing && existing.isVerified) {
+      return res.status(400).json({ success: false, message: 'An account with this email already exists. Please log in.' });
     }
+
+    const salt = await bcrypt.genSalt(8);
+    const hashedPwd = await bcrypt.hash(password || 'eventora_placeholder', salt);
+
+    const otp = generateOTP();
+    await saveUserOTP(email, otp, { name, password: hashedPwd });
+    dispatchEmail(email, otp);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Account created. Verification code sent to your email.',
+      email,
+    });
+  } catch (err) {
+    console.error('register error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-// @desc    Authenticate user & get token
-// @route   POST /api/auth/login
-// @access  Public
-exports.login = async (req, res) => {
-    console.log("➡️ Received login request body:", req.body);
-    try {
-        const { email, password } = req.body;
-        if (!email) {
-            return res.status(400).json({ success: false, message: 'Email address is required' });
-        }
+/**
+ * POST /api/auth/verify-otp
+ * Verify OTP, mark user as verified, return JWT.
+ */
+exports.verifyOTP = async (req, res) => {
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
+    const otp = (req.body.otp || '').trim();
 
-        const normalizedEmail = email.toLowerCase().trim();
-
-        const user = await User.findOne({ email: normalizedEmail });
-        if (!user) {
-            return res.status(400).json({ success: false, message: 'Invalid email or password' });
-        }
-
-        if (password) {
-            const isMatch = await bcrypt.compare(password, user.password);
-            if (!isMatch) {
-                return res.status(400).json({ success: false, message: 'Invalid email or password' });
-            }
-        }
-
-        if (!user.isVerified && user.role !== 'admin') {
-            const otpCode = generateOTPCode();
-            const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-
-            user.otp = otpCode;
-            user.otpExpiresAt = expiresAt;
-            await user.save();
-
-            await Promise.all([
-                OTP.deleteMany({ email: normalizedEmail }),
-                OTP.create({ email: normalizedEmail, otp: otpCode, action: 'account_verification' })
-            ]);
-
-            console.log(`✅ Saved OTP ${otpCode} in database for unverified login ${normalizedEmail}`);
-
-            sendOtpEmail(normalizedEmail, otpCode)
-                .then(() => console.log(`📧 Email delivered to ${normalizedEmail}`))
-                .catch((mailErr) => console.error("❌ Mail dispatch error:", mailErr.message));
-
-            return res.status(403).json({
-                success: false,
-                message: 'Account not verified. A new verification code has been sent to your email.',
-                needsVerification: true,
-                email: user.email
-            });
-        }
-
-        const token = generateToken(user._id, user.role, user.email);
-
-        return res.json({
-            success: true,
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            token
-        });
-    } catch (error) {
-        console.error('❌ Error in login controller:', error);
-        return res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+    if (!email || !otp) {
+      return res.status(400).json({ success: false, message: 'Email and OTP are required.' });
     }
+
+    const user = await User.findOne({ email });
+
+    // Accept match from user document OR backup OTP collection
+    const otpRecord = await OTP.findOne({ email, otp });
+    const matchesUser = user && user.otp && String(user.otp).trim() === otp;
+
+    if (!matchesUser && !otpRecord) {
+      return res.status(400).json({ success: false, message: 'Invalid verification code.' });
+    }
+
+    // Check expiry (only via user.otp path)
+    if (matchesUser && user.otpExpiresAt && user.otpExpiresAt < new Date()) {
+      return res.status(400).json({ success: false, message: 'Code expired. Please request a new one.' });
+    }
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'User not found. Please register again.' });
+    }
+
+    // Mark verified
+    user.isVerified = true;
+    user.otp = undefined;
+    user.otpExpiresAt = undefined;
+    await user.save();
+    await OTP.deleteMany({ email });
+
+    const token = generateToken(user);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Verified successfully.',
+      token,
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isVerified: true,
+    });
+  } catch (err) {
+    console.error('verifyOTP error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * POST /api/auth/login
+ * Verify password, issue JWT (or send verification OTP if unverified).
+ */
+exports.login = async (req, res) => {
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
+    const password = req.body.password || '';
+
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required.' });
+
+    const user = await User.findOne({ email });
+    if (!user) return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+
+    // Unverified user — re-send OTP
+    if (!user.isVerified && user.role !== 'admin') {
+      const otp = generateOTP();
+      await saveUserOTP(email, otp, {});
+      dispatchEmail(email, otp);
+
+      return res.status(403).json({
+        success: false,
+        needsVerification: true,
+        email,
+        message: 'Account not verified. A new code has been sent to your email.',
+      });
+    }
+
+    const token = generateToken(user);
+
+    return res.status(200).json({
+      success: true,
+      token,
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+  } catch (err) {
+    console.error('login error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
 };
 
 exports.sendBookingOTP = exports.sendOTP;
