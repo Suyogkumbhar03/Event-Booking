@@ -57,7 +57,7 @@ const EventDetail = () => {
     }
   };
 
-  // Step 1 & 2: User clicks "Book Ticket / Confirm & Pay"
+  // User clicks "Book Ticket" — require logged-in user to confirm with password
   const handleBookingTrigger = async () => {
     setError('');
     
@@ -76,42 +76,40 @@ const EventDetail = () => {
       title: event.title
     };
 
-    // Mandatory OTP verification required for every booking confirmation
+    // Show password confirmation modal
     setPendingBooking(bookingPayload);
     setShowAuthModal(true);
   };
 
-  // Step 4: Execute booking request ONLY AFTER OTP verification / Token existence
-  const executeBookingApi = async (payload, authToken) => {
+  // Execute booking after password is verified
+  const executeBookingApi = async (payload) => {
     setBookingLoading(true);
     setError('');
-
     try {
-      const headers = { Authorization: `Bearer ${authToken}` };
-      const { data } = await api.post('/bookings', {
+      const authToken = localStorage.getItem('token');
+      const { data } = await api.post('bookings', {
         eventId: payload.eventId,
         tier: payload.tier,
         quantity: payload.quantity,
         totalPrice: payload.totalPrice
-      }, { headers });
+      }, { headers: { Authorization: `Bearer ${authToken}` } });
 
       const createdBooking = data.booking || data;
       setConfirmedTicket(createdBooking);
       setShowAuthModal(false);
       setPendingBooking(null);
     } catch (err) {
-      console.error('Booking execution error:', err);
-      setError(err.response?.data?.message || err.message || 'Failed to complete booking execution');
+      setError(err.response?.data?.message || err.message || 'Failed to complete booking');
     } finally {
       setBookingLoading(false);
     }
   };
 
-  // Callback triggered when AuthModal completes 6-digit OTP verification
-  const handleAuthModalSuccess = async (verifiedToken) => {
+  // Password confirmed — proceed with booking
+  const handleAuthModalSuccess = async () => {
     setShowAuthModal(false);
     if (pendingBooking) {
-      await executeBookingApi(pendingBooking, verifiedToken);
+      await executeBookingApi(pendingBooking);
     }
   };
 

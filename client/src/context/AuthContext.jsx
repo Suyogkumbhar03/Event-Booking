@@ -11,67 +11,36 @@ export const AuthProvider = ({ children }) => {
         const userInfo = localStorage.getItem('userInfo');
         const token = localStorage.getItem('token');
         if (userInfo && token) {
-            try {
-                setUser(JSON.parse(userInfo));
-            } catch (e) {
-                console.error('Error parsing stored user info:', e);
-            }
+            try { setUser(JSON.parse(userInfo)); } catch (e) { /* ignore */ }
         }
         setLoading(false);
     }, []);
 
-    const sendOTP = async (email) => {
-        try {
-            const { data } = await api.post('auth/send-otp', { email });
-            return data;
-        } catch (error) {
-            throw error.response?.data?.message || error.message || 'Failed to send OTP';
+    const register = async (name, email, password) => {
+        const { data } = await api.post('auth/register', { name, email, password });
+        if (data.token) {
+            const userData = { _id: data._id, name: data.name, email: data.email, role: data.role };
+            setUser(userData);
+            localStorage.setItem('userInfo', JSON.stringify(userData));
+            localStorage.setItem('token', data.token);
         }
-    };
-
-    const verifyOTP = async (email, otp) => {
-        try {
-            const { data } = await api.post('auth/verify-otp', { email, otp });
-            if (data.token) {
-                const userData = data.user || {
-                    _id: data._id,
-                    name: data.name,
-                    email: data.email,
-                    role: data.role,
-                    isVerified: data.isVerified
-                };
-                setUser(userData);
-                localStorage.setItem('userInfo', JSON.stringify(userData));
-                localStorage.setItem('token', data.token);
-            }
-            return data;
-        } catch (error) {
-            throw error.response?.data?.message || error.message || 'OTP verification failed';
-        }
+        return data;
     };
 
     const login = async (email, password) => {
-        try {
-            const { data } = await api.post('auth/login', { email, password });
-            if (data.token) {
-                setUser(data);
-                localStorage.setItem('userInfo', JSON.stringify(data));
-                localStorage.setItem('token', data.token);
-            }
-            return data;
-        } catch (error) {
-            if (error.response?.data?.needsVerification) throw error.response.data;
-            throw error.response?.data?.message || 'Login failed';
+        const { data } = await api.post('auth/login', { email, password });
+        if (data.token) {
+            const userData = { _id: data._id, name: data.name, email: data.email, role: data.role };
+            setUser(userData);
+            localStorage.setItem('userInfo', JSON.stringify(userData));
+            localStorage.setItem('token', data.token);
         }
+        return data;
     };
 
-    const register = async (name, email, password) => {
-        try {
-            const { data } = await api.post('auth/register', { name, email, password });
-            return data;
-        } catch (error) {
-            throw error.response?.data?.message || 'Registration failed';
-        }
+    const verifyPassword = async (email, password) => {
+        const { data } = await api.post('auth/verify-password', { email, password });
+        return data;
     };
 
     const logout = () => {
@@ -81,7 +50,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, sendOTP, verifyOTP, login, register, logout, loading }}>
+        <AuthContext.Provider value={{ user, login, register, verifyPassword, logout, loading }}>
             {!loading && children}
         </AuthContext.Provider>
     );
